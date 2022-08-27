@@ -8,7 +8,7 @@ from .woebin import woepoints_ply1
 
 
 # coefficients in scorecard
-def ab(points0=600, odds0=1/19, pdo=50):
+def ab(points0=540, odds0=1/9, pdo=40):
     # sigmoid function
     # library(ggplot2)
     # ggplot(data.frame(x = c(-5, 5)), aes(x)) + stat_function(fun = function(x) 1/(1+exp(-x)))
@@ -39,7 +39,7 @@ def ab(points0=600, odds0=1/19, pdo=50):
 
 
 
-def scorecard(bins, model, xcolumns, points0=600, odds0=1/19, pdo=50, basepoints_eq0=False, digits=0):
+def scorecard(bins, model, xcolumns, points0=540, odds0=1/9, pdo=40, start_zero=True):
     '''
     Creating a Scorecard
     ------
@@ -50,14 +50,11 @@ def scorecard(bins, model, xcolumns, points0=600, odds0=1/19, pdo=50, basepoints
     ------
     bins: Binning information generated from `woebin` function.
     model: A LogisticRegression model object.
-    points0: Target points, default 600.
-    odds0: Target odds, default 1/19. Odds = p/(1-p).
-    pdo: Points to Double the Odds, default 50.
-    basepoints_eq0: Logical, default is FALSE. If it is TRUE, the 
-      basepoints will equally distribute to each variable.
-    digits: The number of digits after the decimal point for points 
-      calculation. Default 0.
-    
+    points0: Target points, default 540.
+    odds0: Target odds, default 1/9. Odds = p/(1-p).
+    pdo: Points to Double the Odds, default 40.
+    start_zero: Logical, default is TRUE. If it is TRUE, the 
+      scores for all variables will start from 0.
     
     Returns
     ------
@@ -121,17 +118,20 @@ def scorecard(bins, model, xcolumns, points0=600, odds0=1/19, pdo=50, basepoints
     len_x = len(coef_df)
     basepoints = a - b*model.intercept_[0]
     card = {}
-    if basepoints_eq0:
-        card['basepoints'] = pd.DataFrame({'variable':"basepoints", 'bin':np.nan, 'points':0}, index=np.arange(1))
+    if start_zero:
+        card['basepoints'] = pd.DataFrame({'variable':"basepoints", 'bin':np.nan, 'points':round(basepoints)}, index=np.arange(1))
         for i in coef_df.index:
             card[i] = bins.loc[bins['variable']==i,['variable', 'bin', 'woe']]\
-              .assign(points = lambda x: round(-b*x['woe']*coef_df[i] + basepoints/len_x), ndigits=digits)\
+              .assign(points = lambda x: round(-b*x['woe']*coef_df[i]))\
               [["variable", "bin", "points"]]
+            min_points = card[i]['points'].min()
+            card[i]['points'] = card[i]['points'] - min_points
+            card['basepoints']['points'] = card['basepoints']['points'] + min_points
     else:
-        card['basepoints'] = pd.DataFrame({'variable':"basepoints", 'bin':np.nan, 'points':round(basepoints, ndigits=digits)}, index=np.arange(1))
+        card['basepoints'] = pd.DataFrame({'variable':"basepoints", 'bin':np.nan, 'points':round(basepoints)}, index=np.arange(1))
         for i in coef_df.index:
             card[i] = bins.loc[bins['variable']==i,['variable', 'bin', 'woe']]\
-              .assign(points = lambda x: round(-b*x['woe']*coef_df[i]), ndigits=digits)\
+              .assign(points = lambda x: round(-b*x['woe']*coef_df[i]))\
               [["variable", "bin", "points"]]
     return card
 
