@@ -32,7 +32,7 @@ def var_pre_analysis(smp, var_cat=[], var_num=[], spl_val=[], hhi_low=0.05, hhi_
             miss = len(smp.index) - smp[var].count() + smp.loc[smp[var].str.strip() == '',var].count()
         else:
             miss = smp.loc[:, var].isna().sum()
-        var_miss_share.append(round(miss/len(smp.index),4))
+        var_miss_share.append(round(miss/len(smp.index),8))
     var_cat_summary = pd.DataFrame({'Variable': var_cat, \
                                     'HHI': var_hhi, \
                                     'Min share': var_min_share, \
@@ -66,7 +66,7 @@ def var_pre_analysis(smp, var_cat=[], var_num=[], spl_val=[], hhi_low=0.05, hhi_
         out_share_num = var_ser[var_ser < q1_num - 3*iqr].count() + var_ser[var_ser > q3_num + 3*iqr].count()
         out_share.append(round(out_share_num/len(var_ser.index),4))
         miss = smp.loc[:, var].isna().sum()
-        var_miss_share.append(round(miss/len(smp.index),4))
+        var_miss_share.append(round(miss/len(smp.index),8))
     var_num_summary = pd.DataFrame({'Variable': var_num, \
                                     'Q1': q1, \
                                     'Median': med, \
