@@ -12,7 +12,7 @@ def var_types(smp, var_skip):
         if var in var_skip:
             break
         else:
-            if dt.name in ['category', 'object']: #or len(smp[var].unique()) <= 10:
+            if dt.name in ['category', 'object'] or len(smp[var].unique()) <= 10:
                 var_cat.append(var)
             else: var_num.append(var)
     return var_cat, var_num
@@ -30,7 +30,10 @@ def var_pre_analysis(smp, var_cat=[], var_num=[], spl_val=[], hhi_low=0.05, hhi_
     for var in var_cat:
         var_hhi.append(round(hhi(smp[var]),4))
         var_min_share.append(round(min(smp[var].value_counts(normalize=True)),4))
-        miss = len(smp.index) - smp[var].count() + smp.loc[smp[var].str.strip() == '',var].count()
+        if smp[var].dtype.name in ['category', 'object']: 
+            miss = len(smp.index) - smp[var].count() + smp.loc[smp[var].str.strip() == '',var].count()
+        else:
+            miss = smp.loc[:, var].isna().sum()
         var_miss_share.append(round(miss/len(smp.index),4))
     var_cat_summary = pd.DataFrame({'Variable': var_cat, \
                                     'HHI': var_hhi, \
@@ -85,14 +88,14 @@ def var_pre_analysis(smp, var_cat=[], var_num=[], spl_val=[], hhi_low=0.05, hhi_
 def var_cat_distr(smp, var_list, pdf_name, groupby='will_default'):
     pp = PdfPages(pdf_name)
     for i in var_list:
-        cross_tab = pd.crosstab(index=train[i], 
-                                columns=train[groupby])
+        cross_tab = pd.crosstab(index=smp[i], 
+                                columns=smp[groupby])
         cross_tab['Total'] = cross_tab.sum(axis=1)
         cross_tab = cross_tab.sort_values(by=['Total'], ascending = False)
         cross_tab = cross_tab.drop(columns=['Total'])
 
-        cross_tab_norm = pd.crosstab(index=train[i],
-                                     columns=train[groupby],
+        cross_tab_norm = pd.crosstab(index=smp[i],
+                                     columns=smp[groupby],
                                      normalize="index")
         cross_tab_norm = cross_tab_norm.reindex(index=cross_tab.index)
 
