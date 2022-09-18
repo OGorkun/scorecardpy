@@ -336,8 +336,7 @@ def woebin2_init_bin(dtm, init_count_distr, breaks, spl_val):
         init_bin = init_bin.assign(brkp2  = lambda x: x['brkp'].shift(shift_period))\
         .assign(brkp = lambda x:np.where(x['brkp'] == rm_brkp['brkp'], x['brkp2'], x['brkp']))
         # groupby brkp
-        init_bin = init_bin.groupby('brkp').agg({
-          'variable':lambda x: np.unique(x),
+        init_bin = init_bin.groupby(['brkp','variable']).agg({
           'bin': lambda x: '%,%'.join(x),
           'good': sum,
           'bad': sum
@@ -710,15 +709,13 @@ def woebin2(dtm, breaks=None, spl_val=None,
     if breaks is not None:
         # 1.return binning if breaks provided
         bin_list = woebin2_breaks(dtm=dtm, breaks=breaks, spl_val=spl_val)
-        initial_binning = bin_list
-        #bin_list['is_sv'] = 0
-        #print(bin_list['binning'])
-        #print(type(bin_list['binning']))
+        initial_binning = bin_list['binning']
     else:
         if stop_limit == 'N':
             # binning of initial & specialvalues
             bin_list = woebin2_init_bin(dtm, init_count_distr=init_count_distr, breaks=breaks, spl_val=spl_val)
             initial_binning = bin_list
+            print(bin_list)
         else:
             if method == 'tree':
                 # 2.tree-like optimal binning
@@ -970,6 +967,7 @@ def woebin(dt, y, x=None,
           bin_num_limit=bin_num_limit,
           method=method
         )
+        init_bins[x_i]['woe'] = woe_01(init_bins[x_i]['good'],init_bins[x_i]['bad'])
         
         # try catch:
         # "The variable '{}' caused the error: '{}'".format(x_i, error-info)
@@ -984,6 +982,7 @@ def woebin(dt, y, x=None,
         bins_to_breaks(bins, dt, to_string=True, save_string=save_breaks_list)
         bins_to_breaks(init_bins, dt, to_string=True, save_string=save_breaks_list)
     # return
+    
     return init_bins, bins
 
 

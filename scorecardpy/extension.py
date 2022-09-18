@@ -83,7 +83,7 @@ def var_pre_analysis(smp, var_cat=[], var_num=[], spl_val=[], hhi_low=0.05, hhi_
     return var_cat_summary, var_num_summary
 
 # Distribution of categorical variable (bar plots saved as pdf)
-def var_cat_distr(smp, var_list, pdf_name, groupby='will_default'):
+def var_cat_distr(smp, var_list, pdf_name, groupby='target'):
     #pp = PdfPages(pdf_name)
     for i in var_list:
         cross_tab = pd.crosstab(index=smp[i],#.fillna('missing'), 
@@ -122,7 +122,7 @@ def var_cat_distr(smp, var_list, pdf_name, groupby='will_default'):
         #pp.savefig(fig, bbox_inches = 'tight')
     #pp.close()
 
-def var_num_distr(smp, var_list, pdf_name, groupby='will_default'):
+def var_num_distr(smp, var_list, pdf_name, groupby='target'):
     #pp = PdfPages(pdf_name)
     for i in var_list:
         fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(20, 6))
@@ -147,4 +147,36 @@ def vars_iv(var_list, bins_var):
       'iv': iv
     })
     return vars_iv.sort_values('iv', ascending=False).reset_index(drop=True)
+    
+def n0(x): return sum(x==0)
+def n1(x): return sum(x==1)
+def iv_01(good, bad):
+    # iv calculation
+    iv_total = pd.DataFrame({'good':good,'bad':bad}) \
+      .replace(0, 0.9) \
+      .assign(
+        DistrBad = lambda x: x.bad/sum(x.bad),
+        DistrGood = lambda x: x.good/sum(x.good)
+      ) \
+      .assign(iv = lambda x: (x.DistrBad-x.DistrGood)*np.log(x.DistrBad/x.DistrGood)) \
+      .iv.sum()
+    # return iv
+    return iv_total
 
+# Calculation of IV for difference subsamples
+def iv_group(smp, var_list, groupby, y='target'):
+    groups = sorted(smp[groupby].unique())
+    iv_groups = pd.DataFrame({'variable': var_list})
+    for i in groups:
+        df_i = smp.loc[smp[groupby] == i]
+        iv_i = []
+        for var in var_list:
+            gb_var = df_i.groupby(var)[y].agg([n0, n1]).reset_index().rename(columns={'n0':'good','n1':'bad'})
+            iv_var = iv_01(gb_var['good'], gb_var['bad'])
+            iv_i.append(iv_var)
+        iv_df = pd.DataFrame({
+          'variable': var_list,
+          i: iv_i
+        })
+        iv_groups = pd.merge(iv_groups, iv_df, how='left', on='variable')
+    return iv_groups
