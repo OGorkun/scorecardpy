@@ -715,7 +715,6 @@ def woebin2(dtm, breaks=None, spl_val=None,
             # binning of initial & specialvalues
             bin_list = woebin2_init_bin(dtm, init_count_distr=init_count_distr, breaks=breaks, spl_val=spl_val)
             initial_binning = bin_list
-            print(bin_list)
         else:
             if method == 'tree':
                 # 2.tree-like optimal binning
@@ -737,21 +736,11 @@ def woebin2(dtm, breaks=None, spl_val=None,
 
 def bins_to_breaks(bins, dt, to_string=False, save_string=None):
     if isinstance(bins, tuple):
-        print(0)
-        print(type(bins))
-        print(type(bins[0]))
-        print(1)
-        print(len(bins))
-        print(2)
         bins = bins[0]
-        print(type(bins))
     if isinstance(bins, dict):
-        print(3)
         bins = pd.concat(bins, ignore_index=True)
 
     # x variables
-    print(3)
-    print(type(bins))
     #print(bins[]['variable'])
     xs_all = bins['variable'].unique()
     # dtypes of  variables
@@ -769,7 +758,7 @@ def bins_to_breaks(bins, dt, to_string=False, save_string=None):
     if to_string:
         bins_breakslist = "breaks_list={\n"+', \n'.join('\''+bins_breakslist.index[i]+'\': ['+bins_breakslist[i]+']' for i in np.arange(len(bins_breakslist)))+"}"
         if save_string is not None:
-            brk_lst_name = '{}_{}.py'.format(save_string, time.strftime('%Y%m%d_%H%M%S', time.localtime(time.time())))
+            brk_lst_name = save_string
             with open(brk_lst_name, 'w') as f:
                 f.write(bins_breakslist)
             print('[INFO] The breaks_list is saved as {}'.format(brk_lst_name))
@@ -919,8 +908,7 @@ def woebin(dt, y, x=None,
       
     # x variable names
     xs = x_variable(dt, y, x, var_skip)
-    print(1)
-    print(x)
+    # print(x)
     xs_len = len(xs)
     # print_step
     print_step = check_print_step(print_step)
@@ -995,7 +983,7 @@ def woebin(dt, y, x=None,
         print('Binning on {} rows and {} columns in {}'.format(dt.shape[0], dt.shape[1], time.strftime("%H:%M:%S", time.gmtime(runingtime))))
     if save_breaks_list is not None:
         bins_to_breaks(bins, dt, to_string=True, save_string=save_breaks_list)
-        bins_to_breaks(init_bins, dt, to_string=True, save_string=save_breaks_list)
+        #bins_to_breaks(init_bins, dt, to_string=True, save_string=save_breaks_list)
     # return
     
     return init_bins, bins
@@ -1502,7 +1490,7 @@ def woebin_adj(dt, y, bins, fine_bins, adj_all_var=False, special_values=None, m
     # return 
     breaks_list = "{"+', '.join('\''+bins_breakslist.index[i]+'\': ['+bins_breakslist[i]+']' for i in np.arange(len(bins_breakslist)))+"}"
     if save_breaks_list is not None:
-        bins_adj = woebin(dt, y, x=list(bins_breakslist.index.values), breaks_list=breaks_list)
+        _, bins_adj = woebin(dt, y, x=list(bins_breakslist.index.values), breaks_list=breaks_list)
         bins_to_breaks(bins_adj, dt, to_string=True, save_string=save_breaks_list)
     return breaks_list
     
