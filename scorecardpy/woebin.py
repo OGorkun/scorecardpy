@@ -736,10 +736,23 @@ def woebin2(dtm, breaks=None, spl_val=None,
 
 
 def bins_to_breaks(bins, dt, to_string=False, save_string=None):
+    if isinstance(bins, tuple):
+        print(0)
+        print(type(bins))
+        print(type(bins[0]))
+        print(1)
+        print(len(bins))
+        print(2)
+        bins = bins[0]
+        print(type(bins))
     if isinstance(bins, dict):
+        print(3)
         bins = pd.concat(bins, ignore_index=True)
 
     # x variables
+    print(3)
+    print(type(bins))
+    #print(bins[]['variable'])
     xs_all = bins['variable'].unique()
     # dtypes of  variables
     vars_class = pd.DataFrame({
@@ -906,6 +919,8 @@ def woebin(dt, y, x=None,
       
     # x variable names
     xs = x_variable(dt, y, x, var_skip)
+    print(1)
+    print(x)
     xs_len = len(xs)
     # print_step
     print_step = check_print_step(print_step)
@@ -1487,7 +1502,7 @@ def woebin_adj(dt, y, bins, fine_bins, adj_all_var=False, special_values=None, m
     # return 
     breaks_list = "{"+', '.join('\''+bins_breakslist.index[i]+'\': ['+bins_breakslist[i]+']' for i in np.arange(len(bins_breakslist)))+"}"
     if save_breaks_list is not None:
-        bins_adj = woebin(dt, y, x=bins_breakslist.index, breaks_list=breaks_list)
+        bins_adj = woebin(dt, y, x=list(bins_breakslist.index.values), breaks_list=breaks_list)
         bins_to_breaks(bins_adj, dt, to_string=True, save_string=save_breaks_list)
     return breaks_list
     

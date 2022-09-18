@@ -180,3 +180,10 @@ def iv_group(smp, var_list, groupby, y='target'):
         })
         iv_groups = pd.merge(iv_groups, iv_df, how='left', on='variable')
     return iv_groups
+    
+    
+def pd_from_score(score, points0=540, odds0=1/9, pdo=40):
+    b = pdo/np.log(2)
+    a = points0 + b*np.log(odds0)
+    pd = 1/(1+np.exp(score/b - a/b))
+    return pd

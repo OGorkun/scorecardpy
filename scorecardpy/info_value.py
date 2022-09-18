@@ -160,7 +160,7 @@ def miv_01(good, bad):
 #'
 def woe_01(good, bad):
     # woe calculation
-    woe = pd.DataFrame({'good':good,'bad':bad}) \
+    woe = -pd.DataFrame({'good':good,'bad':bad}) \
       .replace(0, 0.9) \
       .assign(
         DistrBad = lambda x: x.bad/sum(x.bad),

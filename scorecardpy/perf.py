@@ -310,12 +310,10 @@ def perf_eva(label, pred, title=None, groupnum=None, plot_type=["ks", "roc"], sh
     ### export plot ### 
     if show_plot:
         plist = ["eva_p"+i+'(df_'+i+',title)' for i in plot_type]
-        subplot_nrows = int(np.ceil(len(plist)/2))
-        subplot_ncols = int(np.ceil(len(plist)/subplot_nrows))
+        subplot_nrows = np.ceil(len(plist)/2).astype(int)
+        subplot_ncols = np.ceil(len(plist)/subplot_nrows).astype(int)
         
         fig = plt.figure()
-        fig.set_figwidth(10)
-        fig.set_figheight(3)
         for i in np.arange(len(plist)):
             plt.subplot(subplot_nrows,subplot_ncols,i+1)
             eval(plist[i])

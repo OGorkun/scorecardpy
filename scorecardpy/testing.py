@@ -16,14 +16,14 @@ import random as rd
 def gini_vars(sample, target, vars_list, result_name):
     gini_vars = []
     for var in vars_list:
-        gini_var = roc_auc_score(sample[target], sample[var])*2 - 1
+        gini_var = -(roc_auc_score(sample[target], sample[var])*2 - 1)
         gini_vars.append(gini_var)
     gini_vars_df = pd.DataFrame({'Variable': vars_list, result_name: gini_vars})
     return gini_vars_df
 
 def gini_over_time(sample, target, vars_list, date) :
     sorted_date = sorted(sample[date].unique())
-    # del sorted_date[-12:]
+    del sorted_date[-12:]
     gini_ot = pd.DataFrame([])
     for i in sorted_date:
         sample_date = sample.loc[sample[date] == i]
@@ -33,22 +33,23 @@ def gini_over_time(sample, target, vars_list, date) :
         gini_ot = pd.concat([gini_ot, gini_date])
     return gini_ot
 
-def score_ranges(sample, score, nintervals=10) :
-    intervals = pd.cut(sample[score], nintervals)
+def score_ranges(sample, score) :
+    intervals = pd.cut(sample[score], 10)
     intervals_unique = intervals.unique()
     output = pd.DataFrame({'range': intervals_unique})
     output['score_range'] = output['range']
     output = output.set_index(['range'])
     return output
 
-def score_distr(sample, target, score='score', score_range='score_range') :
+def score_distr(sample, target, score, intervals) :
+    sample['score_range'] = sample.apply(lambda x: intervals.loc[(x[score])], axis=1)
     sample_ranges = sample[['score_range',target]].groupby(['score_range']).agg(['count', 'sum' ])
     sample_ranges.columns = sample_ranges.columns.droplevel(0)
     sample_ranges = sample_ranges.rename(columns={"count": "Total", "sum": "Bads"})
     sample_ranges['Goods'] = (sample_ranges['Total'] - sample_ranges['Bads'])
-    sample_ranges['Total Share'] = sample_ranges['Total'] / sample_ranges['Total'].sum()
-    sample_ranges['Bads Share'] = sample_ranges['Bads'] / sample_ranges['Bads'].sum()
-    sample_ranges['Goods Share'] = sample_ranges['Goods'] / sample_ranges['Goods'].sum()
+    sample_ranges['Total_Share'] = sample_ranges['Total'] / sample_ranges['Total'].sum()
+    sample_ranges['Bads_Share'] = sample_ranges['Bads'] / sample_ranges['Bads'].sum()
+    sample_ranges['Goods_Share'] = sample_ranges['Goods'] / sample_ranges['Goods'].sum()
     sample_ranges['score_range'] = sample_ranges.index
     ranges_mid = sample_ranges.apply(lambda x: x['score_range'].mid, axis=1)
     ranges_mid_df = pd.DataFrame({'score': ranges_mid}) 
@@ -112,13 +113,13 @@ def psi_over_time(ref_sample, sample, vars_list, date) :
     for i in sorted_date:
         sample_date = sample.loc[sample[date] == i]
         psi_date = psi_vars(ref_sample, sample_date, vars_list, i)
-        psi_date = psi_date.rename(columns={"Variable": date})
-        psi_date = psi_date.set_index(date).T
+        psi_date = psi_date.rename(columns={"Variable": "Period"})
+        psi_date = psi_date.set_index('Period').T
         psi_ot = pd.concat([psi_ot, psi_date])
     return psi_ot
 
 def hhi(series):
-    _, cnt = np.unique(series.astype(str), return_counts=True)
+    _, cnt = np.unique(series, return_counts=True)
     return np.square(cnt/cnt.sum()).sum()  
     
 # Creating summary table with binning results
