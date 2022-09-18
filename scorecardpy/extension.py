@@ -9,9 +9,7 @@ def var_types(smp, var_skip):
     var_cat = []
     var_num = []
     for var, dt in smp.dtypes.items():
-        if var in var_skip:
-            break
-        else:
+        if var not in var_skip:
             if dt.name in ['category', 'object'] or len(smp[var].unique()) <= 10:
                 var_cat.append(var)
             else: var_num.append(var)
@@ -86,9 +84,9 @@ def var_pre_analysis(smp, var_cat=[], var_num=[], spl_val=[], hhi_low=0.05, hhi_
 
 # Distribution of categorical variable (bar plots saved as pdf)
 def var_cat_distr(smp, var_list, pdf_name, groupby='will_default'):
-    pp = PdfPages(pdf_name)
+    #pp = PdfPages(pdf_name)
     for i in var_list:
-        cross_tab = pd.crosstab(index=smp[i], 
+        cross_tab = pd.crosstab(index=smp[i],#.fillna('missing'), 
                                 columns=smp[groupby])
         cross_tab['Total'] = cross_tab.sum(axis=1)
         cross_tab = cross_tab.sort_values(by=['Total'], ascending = False)
@@ -121,11 +119,11 @@ def var_cat_distr(smp, var_list, pdf_name, groupby='will_default'):
             horizontalalignment='right',
             fontweight='light',
             fontsize=8)
-        pp.savefig(fig, bbox_inches = 'tight')
-    pp.close()
+        #pp.savefig(fig, bbox_inches = 'tight')
+    #pp.close()
 
 def var_num_distr(smp, var_list, pdf_name, groupby='will_default'):
-    pp = PdfPages(pdf_name)
+    #pp = PdfPages(pdf_name)
     for i in var_list:
         fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(20, 6))
         ax1 = sns.boxplot(data=smp, 
@@ -136,8 +134,8 @@ def var_num_distr(smp, var_list, pdf_name, groupby='will_default'):
                           hue=groupby, 
                           common_norm=False, 
                           ax=axes[1])
-        pp.savefig(fig, bbox_inches = 'tight')
-    pp.close()
+        #pp.savefig(fig, bbox_inches = 'tight')
+    #pp.close()
 
 # Creating summary table with binning results
 def vars_iv(var_list, bins_var):
