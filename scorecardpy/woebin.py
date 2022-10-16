@@ -759,7 +759,7 @@ def bins_to_breaks(bins, dt, to_string=False, save_string=None):
         bins_breakslist = "breaks_list={\n"+', \n'.join('\''+bins_breakslist.index[i]+'\': ['+bins_breakslist[i]+']' for i in np.arange(len(bins_breakslist)))+"}"
         if save_string is not None:
             brk_lst_name = save_string
-            with open(brk_lst_name, 'w') as f:
+            with open(brk_lst_name, 'w', encoding='utf-8') as f:
                 f.write(bins_breakslist)
             print('[INFO] The breaks_list is saved as {}'.format(brk_lst_name))
             return 

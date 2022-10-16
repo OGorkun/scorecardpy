@@ -187,3 +187,4 @@ def pd_from_score(score, points0=540, odds0=1/9, pdo=40):
     a = points0 + b*np.log(odds0)
     pd = 1/(1+np.exp(score/b - a/b))
     return pd
+    

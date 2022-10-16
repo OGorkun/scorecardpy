@@ -10,7 +10,7 @@ from scorecardpy.perf import (perf_eva, perf_psi)
 from scorecardpy.scorecard import (scorecard, scorecard_ply)
 from scorecardpy.one_hot import one_hot
 from scorecardpy.testing import (gini_vars, gini_over_time, score_ranges, score_distr, psi, psi_vars, psi_over_time, hhi)
-from scorecardpy.extension import (var_types, var_pre_analysis, var_cat_distr, var_num_distr, vars_iv, iv_group)
+from scorecardpy.extension import (var_types, var_pre_analysis, var_cat_distr, var_num_distr, vars_iv, iv_group, pd_from_score)
 
 
 __version__ = '0.1.9.2'
