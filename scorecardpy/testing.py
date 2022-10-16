@@ -16,7 +16,7 @@ import random as rd
 def gini_vars(sample, target, vars_list, result_name):
     gini_vars = []
     for var in vars_list:
-        gini_var = roc_auc_score(sample[target], sample[var])*2 - 1
+        gini_var = -(roc_auc_score(sample[target], sample[var])*2 - 1)
         gini_vars.append(gini_var)
     gini_vars_df = pd.DataFrame({'Variable': vars_list, result_name: gini_vars})
     return gini_vars_df
