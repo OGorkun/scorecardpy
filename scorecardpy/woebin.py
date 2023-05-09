@@ -293,22 +293,13 @@ def woebin2_init_bin(dtm, init_count_distr, breaks, spl_val):
     # binning
     if is_numeric_dtype(dtm['value']): # numeric variable
         xvalue = dtm['value'].astype(float)
-        # breaks vector & outlier
-        iq = xvalue.quantile([0.01, 0.25, 0.75, 0.99])
-        iqr = iq[0.75] - iq[0.25]
-        if iqr == 0:
-          prob_down = 0.01
-          prob_up = 0.99
-        else:
-          prob_down = 0.25
-          prob_up = 0.75
-        xvalue_rm_outlier = xvalue[(xvalue >= iq[prob_down]-3*iqr) & (xvalue <= iq[prob_up]+3*iqr)]
         # number of initial binning
-        n = np.trunc(1/init_count_distr)
-        len_uniq_x = len(np.unique(xvalue_rm_outlier))
+        n = int(np.trunc(1/init_count_distr))
+        len_uniq_x = len(np.unique(xvalue))
         if len_uniq_x < n: n = len_uniq_x
         # initial breaks
-        brk = np.unique(xvalue_rm_outlier) if len_uniq_x < 10 else pretty(min(xvalue_rm_outlier), max(xvalue_rm_outlier), n)
+        ser, brk = pd.qcut(dtm['value'], q=n, retbins=True, duplicates='drop')
+        brk = brk.round(decimals=2)
         
         brk = list(filter(lambda x: x>np.nanmin(xvalue) and x<=np.nanmax(xvalue), brk))
         brk = [float('-inf')] + sorted(brk) + [float('inf')]
