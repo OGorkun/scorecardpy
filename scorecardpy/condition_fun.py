@@ -113,7 +113,7 @@ def check_y(dat, y, positive):
     
     # numeric y to int
     if is_numeric_dtype(dat[y]):
-        dat.loc[:,y] = dat[y].apply(lambda x: x if pd.isnull(x) else int(x)) #dat[y].astype(int)
+        dat.loc[:,y] = dat[y].astype(int) #dat[y].apply(lambda x: x if pd.isnull(x) else int(x))
     # length of unique values in y
     unique_y = np.unique(dat[y].values)
     if len(unique_y) == 2:
@@ -169,7 +169,7 @@ def check_breaks_list(breaks_list, xs):
     if breaks_list is not None:
         # is string
         if isinstance(breaks_list, str):
-            breaks_list = eval(breaks_list)
+            breaks_list = eval(breaks_list) # TODO - check eval step
         # is not dict
         if not isinstance(breaks_list, dict):
             raise Exception("Incorrect inputs; breaks_list should be a dict.")
