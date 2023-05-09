@@ -232,40 +232,6 @@ def woebin2_breaks(dtm, breaks, spl_val):
     return {'binning_sv':binning_sv, 'binning':binning}
     
 
-# required in woebin2_init_bin # return pretty breakpoints
-def pretty(low, high, n):
-    '''
-    pretty breakpoints, the same as pretty function in R
-    
-    Params
-    ------
-    low: minimal value 
-    low: maximal value 
-    n: number of intervals
-    
-    Returns
-    ------
-    numpy.ndarray
-        returns a breakpoints array
-    '''
-    # nicenumber
-    def nicenumber(x):
-        exp = np.floor(np.log10(abs(x)))
-        f   = abs(x) / 10**exp
-        if f < 1.5:
-            nf = 1.
-        elif f < 3.:
-            nf = 2.
-        elif f < 7.:
-            nf = 5.
-        else:
-            nf = 10.
-        return np.sign(x) * nf * 10.**exp
-    # pretty breakpoints
-    d     = abs(nicenumber((high-low)/(n-1)))
-    miny  = np.floor(low  / d) * d
-    maxy  = np.ceil (high / d) * d
-    return np.arange(miny, maxy+0.5*d, d)
 # required in woebin2 # return initial binning
 def woebin2_init_bin(dtm, init_count_distr, breaks, spl_val):
     '''
