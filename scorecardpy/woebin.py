@@ -1195,6 +1195,7 @@ def plot_bin(binx, title, show_iv):
     width = 0.35       # the width of the bars: can also be len(x) sequence
     ###### plot ###### 
     fig, ax1 = plt.subplots()
+    plt.xticks(rotation=45, horizontalalignment='right', fontweight='light', fontsize=8)
     ax2 = ax1.twinx()
     # ax1
     p1 = ax1.bar(ind, binx['good_distr'], width, color=(24/254, 192/254, 196/254))
