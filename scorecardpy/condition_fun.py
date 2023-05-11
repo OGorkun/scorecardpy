@@ -112,8 +112,8 @@ def check_y(dat, y, positive):
         # dat = dat[pd.notna(dat[y])]
     
     # numeric y to int
-    if is_numeric_dtype(dat[y]):
-        dat.loc[:,y] = dat[y].astype(int) #dat[y].apply(lambda x: x if pd.isnull(x) else int(x))
+    if is_numeric_dtype(dat[y]): # TODO - add check for nan
+        dat.loc[:,y] = dat[y].apply(lambda x: x if pd.isnull(x) else int(x)) #dat[y].astype(int)
     # length of unique values in y
     unique_y = np.unique(dat[y].values)
     if len(unique_y) == 2:
