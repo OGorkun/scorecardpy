@@ -10,6 +10,7 @@ from scorecardpy.perf import (perf_eva, perf_psi)
 from scorecardpy.scorecard import (scorecard, scorecard_ply)
 from scorecardpy.one_hot import one_hot
 from scorecardpy.vif import vif
+from scorecardpy.expl_analysis import (miss_heatmap, expl_analysis, nan_treatment, var_distr)
 
 
 __version__ = '0.1.9.4'
@@ -23,5 +24,6 @@ __all__ = (
     perf_eva, perf_psi,
     scorecard, scorecard_ply,
     one_hot,
-    vif
+    vif,
+    miss_heatmap, expl_analysis, nan_treatment, var_distr
 )
