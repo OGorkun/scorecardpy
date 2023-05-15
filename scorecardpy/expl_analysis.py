@@ -2,7 +2,6 @@ import pandas as pd
 import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
-from xlsxwriter import Workbook
 
 
 def var_types(df, var_skip=None):
@@ -110,7 +109,7 @@ def expl_analysis(df, var_skip=None, special_values=[], hhi_low=0.05, hhi_high=0
     var_num_summary.to_excel(writer, sheet_name='var_num_summary')
     writer.close()
 
-    return var_cat_summary, var_num_summary
+    return var_cat_summary, var_num_summary, var_cat+var_num
 
 # treatment of nan - median for numeric and 'Missing' for string
 def nan_treatment(df, x=None, var_skip=None):
@@ -132,20 +131,21 @@ def nan_treatment(df, x=None, var_skip=None):
     return df2
 
 # Distribution of categorical variable (bar plots saved as pdf)
-def var_distr(df, var_skip, groupby='target'):
+def var_distr(df, var_skip, groupby='target', special_values=[]):
     # pp = PdfPages(pdf_name)
     var_cat, var_num = var_types(df, var_skip)
 
     #categorical vars
     for i in var_cat:
-        cross_tab = pd.crosstab(index=df[i],  # .fillna('missing'),
-                                columns=df[groupby])
+        dfi = df[~df[i].isin(special_values)]
+        cross_tab = pd.crosstab(index=dfi[i],  # .fillna('missing'),
+                                columns=dfi[groupby])
         cross_tab['Total'] = cross_tab.sum(axis=1)
         cross_tab = cross_tab.sort_values(by=['Total'], ascending=False)
         cross_tab = cross_tab.drop(columns=['Total'])
 
-        cross_tab_norm = pd.crosstab(index=df[i],
-                                     columns=df[groupby],
+        cross_tab_norm = pd.crosstab(index=dfi[i],
+                                     columns=dfi[groupby],
                                      normalize="index")
         cross_tab_norm = cross_tab_norm.reindex(index=cross_tab.index)
 
@@ -174,12 +174,14 @@ def var_distr(df, var_skip, groupby='target'):
         # pp.savefig(fig, bbox_inches = 'tight')
     # pp.close()
 
+    # numerical vars
     for i in var_num:
+        dfi = df[~df[i].isin(special_values)]
         fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(20, 6))
-        ax1 = sns.boxplot(data=df,
+        ax1 = sns.boxplot(data=dfi,
                           x=i,
                           ax=axes[0])
-        ax2 = sns.kdeplot(data=df,
+        ax2 = sns.kdeplot(data=dfi,
                           x=i,
                           hue=groupby,
                           common_norm=False,
