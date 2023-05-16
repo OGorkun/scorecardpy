@@ -112,7 +112,7 @@ def expl_analysis(df, var_skip=None, special_values=[], hhi_low=0.05, hhi_high=0
     return var_cat_summary, var_num_summary, var_cat+var_num
 
 # treatment of nan - median for numeric and 'Missing' for string
-def nan_treatment(df, x=None, var_skip=None):
+def nan_treatment(df, x=None, var_skip=None, special_values=[]):
     df2 = df
     if x is None:
         x = list(set(df2.columns) - set(var_skip))
@@ -131,7 +131,7 @@ def nan_treatment(df, x=None, var_skip=None):
     return df2
 
 # Distribution of categorical variable (bar plots saved as pdf)
-def var_distr(df, var_skip, groupby='target', special_values=[]):
+def var_distr(df, var_skip=None, groupby='target', special_values=[]):
     # pp = PdfPages(pdf_name)
     var_cat, var_num = var_types(df, var_skip)
 
