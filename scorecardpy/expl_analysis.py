@@ -17,7 +17,7 @@ def var_types(df, var_skip=None):
 
 
 # heatmap for the missing values
-def miss_heatmap(df, var_skip=None, save_to='1_1_missings_heatmap.png'):
+def miss_heatmap(df, var_skip=None, save_to='1_1_missings_heatmap.png', fig_width=10, fig_height=6):
     var_cat, var_num = var_types(df, var_skip)
 
     percent_missing = df.loc[:, var_cat + var_num].isna().sum() * 100 / len(df)
@@ -25,7 +25,7 @@ def miss_heatmap(df, var_skip=None, save_to='1_1_missings_heatmap.png'):
     percent_missing.sort_values('percent_missing', ascending=False, inplace=True)
     percent_missing.reset_index(drop=True)
 
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(fig_width, fig_height))
     sns.heatmap(df[percent_missing.column].isna().transpose(),
                 cmap="YlGnBu",
                 cbar_kws={'label': 'Missing Data'})
