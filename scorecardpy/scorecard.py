@@ -8,7 +8,7 @@ from .woebin import woepoints_ply1
 
 
 # coefficients in scorecard
-def ab(points0=600, odds0=1/19, pdo=50):
+def ab(points0=540, odds0=1/9, pdo=40):
     # sigmoid function
     # library(ggplot2)
     # ggplot(data.frame(x = c(-5, 5)), aes(x)) + stat_function(fun = function(x) 1/(1+exp(-x)))
@@ -39,7 +39,7 @@ def ab(points0=600, odds0=1/19, pdo=50):
 
 
 
-def scorecard(bins, model, xcolumns, points0=600, odds0=1/19, pdo=50, basepoints_eq0=False, digits=0):
+def scorecard(bins, model, xcolumns, points0=540, odds0=1/9, pdo=40, basepoints_eq0=False, digits=0):
     '''
     Creating a Scorecard
     ------
@@ -50,10 +50,10 @@ def scorecard(bins, model, xcolumns, points0=600, odds0=1/19, pdo=50, basepoints
     ------
     bins: Binning information generated from `woebin` function.
     model: A LogisticRegression model object.
-    points0: Target points, default 600.
-    odds0: Target odds, default 1/19. Odds = p/(1-p).
-    pdo: Points to Double the Odds, default 50.
-    basepoints_eq0: Logical, default is FALSE. If it is TRUE, the 
+    points0: Target points, default 540.
+    odds0: Target odds, default 1/9. Odds = p/(1-p).
+    pdo: Points to Double the Odds, default 40.
+    basepoints_eq0: Logical, default is FALSE. If it is TRUE, the
       basepoints will equally distribute to each variable.
     digits: The number of digits after the decimal point for points 
       calculation. Default 0.
