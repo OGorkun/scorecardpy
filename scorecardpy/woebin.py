@@ -752,7 +752,7 @@ def woebin(dt, y, x=None,
            # min_perc_fine_bin=0.02, min_perc_coarse_bin=0.05, max_num_bin=8, 
            positive="bad|1", no_cores=None, print_step=0, method="tree",
            ignore_const_cols=True, ignore_datetime_cols=True, 
-           check_cate_num=True, replace_blank=True, 
+           check_cate_num=True, replace_blank=True,
            save_breaks_list=None, **kwargs):
     '''
     WOE Binning
@@ -893,7 +893,7 @@ def woebin(dt, y, x=None,
     # breaks_list
     breaks_list = check_breaks_list(breaks_list, xs)
     # special_values
-    special_values = check_special_values(special_values, xs)
+    special_values = check_special_values(dt, special_values, xs)
     ### ### 
     # stop_limit range
     if stop_limit<0 or stop_limit>0.5 or not isinstance(stop_limit, (float, int)):
@@ -1421,7 +1421,7 @@ def woebin_adj(dt, y, bins, init_bins, adj_all_var=False, special_values=None,
     # length of adjusting variables
     xs_len = len(xs_adj)
     # special_values
-    special_values = check_special_values(special_values, xs_adj)
+    special_values = check_special_values(dt, special_values, xs_adj)
     
     # breakslist of bins
     bins_breakslist = bins_to_breaks(bins,dt)

@@ -177,18 +177,24 @@ def check_breaks_list(breaks_list, xs):
 
 
 # check special_values
-def check_special_values(special_values, xs):
+def check_special_values(dt, special_values, xs):
     if special_values is not None:
         # # is string
         # if isinstance(special_values, str):
         #     special_values = eval(special_values)
         if isinstance(special_values, list):
-            warnings.warn("The special_values should be a dict. Make sure special values are exactly the same in all variables if special_values is a list.")
+            #warnings.warn("The special_values should be a dict. Make sure special values are exactly the same in all variables if special_values is a list.")
             sv_dict = {}
             for i in xs:
-                sv_dict[i] = special_values
+                for spl_val in special_values:
+                    sv_i = []
+                    if spl_val in dt[i].unique():
+                        sv_i = sv_i + [spl_val]
+                if sv_i: sv_dict[i] = sv_i
             special_values = sv_dict
         elif not isinstance(special_values, dict): 
             raise Exception("Incorrect inputs; special_values should be a list or dict.")
     return special_values
 
+
+#def check_max_bin_num(dt, special_values, xs)
