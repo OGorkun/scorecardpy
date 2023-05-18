@@ -935,8 +935,8 @@ def woebin(dt, y, x=None,
             x_i = xs[i]
             # print(x_i)
             # print xs
-            if print_step>0 and bool((i+1)%print_step): 
-                print(('{:'+str(len(str(xs_len)))+'.0f}/{} {}').format(i, xs_len, x_i), flush=True)
+            if print_step>0 and not bool((i+1)%print_step):
+                print(('{:'+str(len(str(xs_len)))+'.0f}/{} {}').format(i+1, xs_len, x_i), flush=True)
             # woebining on one variable
             init_bins[x_i], bins[x_i] = woebin2(
               dtm = pd.DataFrame({'y':dt[y], 'variable':x_i, 'value':dt[x_i]}),
