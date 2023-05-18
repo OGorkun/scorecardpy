@@ -38,12 +38,15 @@ def hhi(series):
 
 
 # Exploratory analysis of variables
-def expl_analysis(df, var_skip=None, special_values=[], hhi_low=0.05, hhi_high=0.95, min_share=0.05,
+def expl_analysis(df, var_skip=None, special_values=[],
+                  hhi_low=0.05, hhi_high=0.95,
+                  min_share=0.05, max_share=0.9,
                   save_to='1_2_exploratory_analysis.xlsx'):
     var_cat, var_num = var_types(df, var_skip)
     # categorical variables
     var_hhi = []
     var_min_share = []
+    var_max_share = []
     var_miss_share = []
     for var in var_cat:
         var_hhi.append(round(hhi(df[var]), 4))
@@ -54,16 +57,21 @@ def expl_analysis(df, var_skip=None, special_values=[], hhi_low=0.05, hhi_high=0
         var_miss_share.append(round(miss / len(df.index), 8))
         if miss < len(df.index):
             var_min_share.append(round(min(df[var].value_counts(normalize=True)), 4))
+            var_max_share.append(round(max(df[var].value_counts(normalize=True)), 4))
         else:
             var_min_share.append(1)
+            var_max_share.append(1)
     var_cat_summary = pd.DataFrame({'Variable': var_cat, \
                                     'HHI': var_hhi, \
                                     'Min share': var_min_share, \
+                                    'Max share': var_max_share, \
                                     'Missings share': var_miss_share})
     var_cat_summary['HHI warning'] = var_cat_summary['HHI'] \
         .apply(lambda x: 'HHI < 0.05' if x < hhi_low else ('HHI > 0.95' if x > hhi_high else ''))
     var_cat_summary['Min share warning'] = var_cat_summary['Min share'] \
         .apply(lambda x: 'Min share is ' + str(round(x * 100, 2)) + '%' if x < min_share else '')
+    var_cat_summary['Max share warning'] = var_cat_summary['Max share'] \
+        .apply(lambda x: 'Max share is ' + str(round(x * 100, 2)) + '%' if x > max_share else '')
     var_cat_summary['Missings warning'] = var_cat_summary['Missings share'] \
         .apply(lambda x: str(round(x * 100, 2)) + '% missing values' if x > 0 else '')
 
@@ -75,6 +83,7 @@ def expl_analysis(df, var_skip=None, special_values=[], hhi_low=0.05, hhi_high=0
     uw = []
     out_share = []
     var_miss_share = []
+    var_max_share = []
     for var in var_num:
         var_ser = df[var]
         var_ser = var_ser[~var_ser.isin(special_values)] # TODO - consider special values to be a dict
@@ -90,6 +99,10 @@ def expl_analysis(df, var_skip=None, special_values=[], hhi_low=0.05, hhi_high=0
         out_share.append(round(out_share_num / len(var_ser.index), 4))
         miss = df.loc[:, var].isna().sum()
         var_miss_share.append(round(miss / len(df.index), 8))
+        if miss < len(df.index):
+            var_max_share.append(round(max(df[var].value_counts(normalize=True)), 4))
+        else:
+            var_max_share.append(1)
     var_num_summary = pd.DataFrame({'Variable': var_num, \
                                     'Q1': q1, \
                                     'Median': med, \
@@ -97,9 +110,12 @@ def expl_analysis(df, var_skip=None, special_values=[], hhi_low=0.05, hhi_high=0
                                     'Lower whisker': lw, \
                                     'Upper whisker': uw, \
                                     'Share of outliers': out_share, \
+                                    'Max share': var_max_share, \
                                     'Missings share': var_miss_share})
     var_num_summary['Outliers warning'] = var_num_summary['Share of outliers'] \
         .apply(lambda x: str(round(x * 100, 2)) + '% outliers' if x > 0 else '')
+    var_num_summary['Max share warning'] = var_num_summary['Max share'] \
+        .apply(lambda x: 'Max share is ' + str(round(x * 100, 2)) + '%' if x > max_share else '')
     var_num_summary['Missings warning'] = var_num_summary['Missings share'] \
         .apply(lambda x: str(round(x * 100, 2)) + '% missing values' if x > 0 else '')
 
