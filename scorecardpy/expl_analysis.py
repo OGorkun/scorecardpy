@@ -128,7 +128,7 @@ def expl_analysis(df, var_skip=None, special_values=[],
     return var_cat_summary, var_num_summary, var_cat+var_num
 
 # treatment of nan - median for numeric and 'Missing' for string
-def nan_treatment(df, x=None, var_skip=None, special_values=[]):
+def nan_treatment(df, x=None, var_skip=None, special_values=[]): #TODO merge with rep_blank_na
     df2 = df
     if x is None:
         x = list(set(df2.columns) - set(var_skip))

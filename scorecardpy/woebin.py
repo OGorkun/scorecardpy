@@ -260,7 +260,7 @@ def woebin2_init_bin(dtm, init_count_distr, breaks, spl_val):
     if is_numeric_dtype(dtm['value']): # numeric variable
         xvalue = dtm['value'].astype(float)
         # number of initial binning
-        n = int(np.trunc(1/init_count_distr))
+        n = int(np.trunc(len(dtm.index)/init_count_distr))
         len_uniq_x = len(np.unique(xvalue))
         if len_uniq_x < n: n = len_uniq_x
         # initial breaks
@@ -430,7 +430,7 @@ def woebin2_tree_add_1brkp(dtm, initial_binning, count_distr_limit, bestbreaks=N
     
     
 # required in woebin2 # return tree-like binning
-def woebin2_tree(dtm, init_count_distr=0.02, count_distr_limit=0.05, 
+def woebin2_tree(dtm, init_count_distr, count_distr_limit=0.05,
                  stop_limit=0.1, bin_num_limit=8, breaks=None, spl_val=None):
     '''
     binning using tree-like method
@@ -496,7 +496,7 @@ def woebin2_tree(dtm, init_count_distr=0.02, count_distr_limit=0.05,
 
 # required in woebin2 # return chimerge binning
 #' @importFrom stats qchisq
-def woebin2_chimerge(dtm, init_count_distr=0.02, count_distr_limit=0.05, 
+def woebin2_chimerge(dtm, init_count_distr, count_distr_limit=0.05,
                      stop_limit=0.1, bin_num_limit=8, breaks=None, spl_val=None):
     '''
     binning using chimerge method
@@ -671,8 +671,8 @@ def binning_format(binning):
 
 # woebin2
 # This function provides woe binning for only two columns (one x and one y) dataframe.
-def woebin2(dtm, breaks=None, spl_val=None, 
-            init_count_distr=0.02, count_distr_limit=0.05, 
+def woebin2(dtm, init_count_distr, breaks=None, spl_val=None,
+            count_distr_limit=0.05,
             stop_limit=0.1, bin_num_limit=8, method="tree"):
     '''
     provides woe binning for only two series
@@ -749,7 +749,7 @@ def bins_to_breaks(bins, dt, to_string=False, save_string=None):
 def woebin(dt, y, x=None, 
            var_skip=None, breaks_list=None, special_values=None, 
            stop_limit=0.1, count_distr_limit=0.05, bin_num_limit=8, 
-           # min_perc_fine_bin=0.02, min_perc_coarse_bin=0.05, max_num_bin=8, 
+           min_perc_fine_bin=0.02, #min_perc_coarse_bin=0.05, max_num_bin=8,
            positive="bad|1", no_cores=None, print_step=0, method="tree",
            ignore_const_cols=True, ignore_datetime_cols=True, 
            check_cate_num=True, replace_blank=True,
@@ -853,10 +853,6 @@ def woebin(dt, y, x=None,
     # arguments
     ## print_info
     print_info = kwargs.get('print_info', True)
-    ## init_count_distr
-    min_perc_fine_bin = kwargs.get('min_perc_fine_bin', None)
-    init_count_distr = kwargs.get('init_count_distr', min_perc_fine_bin)
-    if init_count_distr is None: init_count_distr = 0.02
     ## count_distr_limit
     min_perc_coarse_bin = kwargs.get('min_perc_coarse_bin', None)
     if min_perc_coarse_bin is not None: count_distr_limit = min_perc_coarse_bin
@@ -898,10 +894,10 @@ def woebin(dt, y, x=None,
     if stop_limit<0 or stop_limit>0.5 or not isinstance(stop_limit, (float, int)):
         warnings.warn("Incorrect parameter specification; accepted stop_limit parameter range is 0-0.5. Parameter was set to default (0.1).")
         stop_limit = 0.1
-    # init_count_distr range
-    if init_count_distr<0.01 or init_count_distr>0.2 or not isinstance(init_count_distr, (float, int)):
-        warnings.warn("Incorrect parameter specification; accepted init_count_distr parameter range is 0.01-0.2. Parameter was set to default (0.02).")
-        init_count_distr = 0.02
+    # min_perc_fine_bin range
+    if min_perc_fine_bin<0.01 or min_perc_fine_bin>0.2 or not isinstance(min_perc_fine_bin, (float, int)):
+        warnings.warn("Incorrect parameter specification; accepted min_perc_fine_bin parameter range is 0.01-0.2. Parameter was set to default (0.02).")
+        min_perc_fine_bin = 0.02
     # count_distr_limit
     if count_distr_limit<0.01 or count_distr_limit>0.2 or not isinstance(count_distr_limit, (float, int)):
         warnings.warn("Incorrect parameter specification; accepted count_distr_limit parameter range is 0.01-0.2. Parameter was set to default (0.05).")
@@ -920,6 +916,7 @@ def woebin(dt, y, x=None,
     xs = list(set(xs) - set(var_one_bin))
     xs_len = len(xs)
     # binning for each x variable
+    init_count_distr = len(dt.index)*min_perc_fine_bin
     # loop on xs
     if (no_cores is None) or (no_cores < 1):
         all_cores = mp.cpu_count() - 1
