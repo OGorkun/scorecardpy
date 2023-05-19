@@ -887,7 +887,6 @@ def woebin(dt, y, x=None,
       
     # x variable names
     xs = x_variable(dt, y, x, var_skip)
-    xs_len = len(xs)
     # print_step
     print_step = check_print_step(print_step)
     # breaks_list
@@ -915,7 +914,11 @@ def woebin(dt, y, x=None,
     if method not in ["tree", "chimerge"]:
         warnings.warn("Incorrect inputs; method should be tree or chimerge. Parameter was set to default (tree).")
         method = "tree"
-    ### ### 
+    ### ###
+    # check if bins can be created
+    var_one_bin = check_max_bin_num(dt, xs, min_perc_fine_bin)
+    xs = list(set(xs) - set(var_one_bin))
+    xs_len = len(xs)
     # binning for each x variable
     # loop on xs
     if (no_cores is None) or (no_cores < 1):
