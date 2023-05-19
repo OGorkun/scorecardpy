@@ -1492,3 +1492,16 @@ def woebin_adj(dt, y, bins, init_bins, adj_all_var=False, special_values=None,
         bins_to_breaks(bins_adj, dt, to_string=True, save_string=save_breaks_list)
     return breaks_list
     
+
+# Creating summary table with binning results
+def vars_iv(bins):
+    var_list = []
+    iv = []
+    for i in bins:
+        iv.append(bins[i].iloc[0]['total_iv'])
+        var_list.append(i)
+    vars_iv = pd.DataFrame({
+      'variable': var_list,
+      'iv': iv
+    })
+    return vars_iv.sort_values('iv', ascending=False).reset_index(drop=True)
