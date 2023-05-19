@@ -147,8 +147,9 @@ def nan_treatment(df, x=None, var_skip=None, special_values=[]): #TODO merge wit
     return df2
 
 # Distribution of categorical variable (bar plots saved as pdf)
-def var_distr(df, var_skip=None, groupby='target', special_values=[]):
+def var_distr(df, var_list=None, groupby='target', special_values=[]):
     # pp = PdfPages(pdf_name)
+    var_skip = list(set(df.columns) - set(var_list))
     var_cat, var_num = var_types(df, var_skip)
 
     #categorical vars
