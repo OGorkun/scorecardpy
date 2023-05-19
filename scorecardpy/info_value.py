@@ -166,7 +166,7 @@ def woe_01(good, bad):
         DistrBad = lambda x: x.bad/sum(x.bad),
         DistrGood = lambda x: x.good/sum(x.good)
       ) \
-      .assign(woe = lambda x: np.log(x.DistrBad/x.DistrGood)) \
+      .assign(woe = lambda x: np.log(x.DistrGood/x.DistrBad)) \
       .woe
     # return woe
     return woe
