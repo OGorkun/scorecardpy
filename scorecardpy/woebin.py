@@ -233,7 +233,7 @@ def woebin2_breaks(dtm, breaks, spl_val):
     
 
 # required in woebin2 # return initial binning
-def woebin2_init_bin(dtm, init_count_distr, breaks, spl_val):
+def woebin2_init_bin(dtm, init_count_distr, breaks, spl_val, bin_decimals):
     '''
     initial binning
     
@@ -258,14 +258,14 @@ def woebin2_init_bin(dtm, init_count_distr, breaks, spl_val):
     if dtm is None: return {'binning_sv':binning_sv, 'initial_binning':None}
     # binning
     if is_numeric_dtype(dtm['value']): # numeric variable
-        xvalue = dtm['value'].astype(float)
+        xvalue = dtm['value'].astype(float).round(decimals=bin_decimals)
         # number of initial binning
         n = int(np.trunc(len(dtm.index)/init_count_distr))
         len_uniq_x = len(np.unique(xvalue))
         if len_uniq_x < n: n = len_uniq_x
         # initial breaks
-        ser, brk = pd.qcut(dtm['value'], q=n, retbins=True, duplicates='drop')
-        brk = brk.round(decimals=2)
+        ser, brk = pd.qcut(xvalue, q=n, retbins=True, duplicates='drop')
+        brk = brk.round(decimals=bin_decimals)
         
         brk = list(filter(lambda x: x>np.nanmin(xvalue) and x<=np.nanmax(xvalue), brk))
         brk = [float('-inf')] + sorted(brk) + [float('inf')]
@@ -430,7 +430,7 @@ def woebin2_tree_add_1brkp(dtm, initial_binning, count_distr_limit, bestbreaks=N
     
     
 # required in woebin2 # return tree-like binning
-def woebin2_tree(dtm, init_count_distr, count_distr_limit=0.05,
+def woebin2_tree(dtm, init_count_distr, count_distr_limit=0.05, bin_decimals=4,
                  stop_limit=0.1, bin_num_limit=8, breaks=None, spl_val=None):
     '''
     binning using tree-like method
@@ -451,7 +451,7 @@ def woebin2_tree(dtm, init_count_distr, count_distr_limit=0.05,
         returns a dict with initial binning and special_value binning
     '''
     # initial binning
-    bin_list = woebin2_init_bin(dtm, init_count_distr=init_count_distr, breaks=breaks, spl_val=spl_val)
+    bin_list = woebin2_init_bin(dtm, init_count_distr=init_count_distr, breaks=breaks, spl_val=spl_val, bin_decimals=bin_decimals)
     initial_binning = bin_list['initial_binning']
     binning_sv = bin_list['binning_sv']
     if initial_binning is None: # fix next condition npe
@@ -496,7 +496,7 @@ def woebin2_tree(dtm, init_count_distr, count_distr_limit=0.05,
 
 # required in woebin2 # return chimerge binning
 #' @importFrom stats qchisq
-def woebin2_chimerge(dtm, init_count_distr, count_distr_limit=0.05,
+def woebin2_chimerge(dtm, init_count_distr, count_distr_limit=0.05, bin_decimals=4,
                      stop_limit=0.1, bin_num_limit=8, breaks=None, spl_val=None):
     '''
     binning using chimerge method
@@ -552,7 +552,7 @@ def woebin2_chimerge(dtm, init_count_distr, count_distr_limit=0.05,
         # return
         return pd.merge(initial_binning.assign(count = lambda x: x['good']+x['bad']), chisq_df, how='left')
     # initial binning
-    bin_list = woebin2_init_bin(dtm, init_count_distr=init_count_distr, breaks=breaks, spl_val=spl_val)
+    bin_list = woebin2_init_bin(dtm, init_count_distr=init_count_distr, breaks=breaks, spl_val=spl_val, bin_decimals=bin_decimals)
     initial_binning = bin_list['initial_binning']
     binning_sv = bin_list['binning_sv']
     # return initial binning if its row number equals 1
@@ -672,7 +672,7 @@ def binning_format(binning):
 # woebin2
 # This function provides woe binning for only two columns (one x and one y) dataframe.
 def woebin2(dtm, init_count_distr, breaks=None, spl_val=None,
-            count_distr_limit=0.05,
+            count_distr_limit=0.05, bin_decimals=4,
             stop_limit=0.1, bin_num_limit=8, method="tree"):
     '''
     provides woe binning for only two series
@@ -694,19 +694,19 @@ def woebin2(dtm, init_count_distr, breaks=None, spl_val=None,
     else:
         if stop_limit == 'N':
             # binning of initial & specialvalues
-            bin_list = woebin2_init_bin(dtm, init_count_distr=init_count_distr, breaks=breaks, spl_val=spl_val)
+            bin_list = woebin2_init_bin(dtm, init_count_distr=init_count_distr, breaks=breaks, spl_val=spl_val, bin_decimals=bin_decimals)
             initial_binning = bin_list
         else:
             if method == 'tree':
                 # 2.tree-like optimal binning
                 bin_list, initial_binning = woebin2_tree(
                   dtm, init_count_distr=init_count_distr, count_distr_limit=count_distr_limit, 
-                  stop_limit=stop_limit, bin_num_limit=bin_num_limit, breaks=breaks, spl_val=spl_val)
+                  stop_limit=stop_limit, bin_num_limit=bin_num_limit, breaks=breaks, spl_val=spl_val, bin_decimals=bin_decimals)
             elif method == "chimerge":
                 # 2.chimerge optimal binning
                 bin_list, initial_binning = woebin2_chimerge(
                   dtm, init_count_distr=init_count_distr, count_distr_limit=count_distr_limit, 
-                  stop_limit=stop_limit, bin_num_limit=bin_num_limit, breaks=breaks, spl_val=spl_val)
+                  stop_limit=stop_limit, bin_num_limit=bin_num_limit, breaks=breaks, spl_val=spl_val, bin_decimals=bin_decimals)
     # rbind binning_sv and binning
     binning = pd.concat(bin_list, keys=bin_list.keys()).reset_index()\
               .assign(is_sv = lambda x: x.level_0 =='binning_sv')
@@ -749,7 +749,7 @@ def bins_to_breaks(bins, dt, to_string=False, save_string=None):
 def woebin(dt, y, x=None, 
            var_skip=None, breaks_list=None, special_values=None, 
            stop_limit=0.1, count_distr_limit=0.05, bin_num_limit=8, 
-           min_perc_fine_bin=0.02, #min_perc_coarse_bin=0.05, max_num_bin=8,
+           min_perc_fine_bin=0.02, bin_decimals=4, #min_perc_coarse_bin=0.05, max_num_bin=8,
            positive="bad|1", no_cores=None, print_step=0, method="tree",
            ignore_const_cols=True, ignore_datetime_cols=True, 
            check_cate_num=True, replace_blank=True,
@@ -912,7 +912,7 @@ def woebin(dt, y, x=None,
         method = "tree"
     ### ###
     # check if bins can be created
-    var_one_bin = check_max_bin_num(dt, xs, min_perc_fine_bin)
+    var_one_bin = check_max_bin_num(dt, xs, min_perc_fine_bin, bin_decimals)
     xs = list(set(xs) - set(var_one_bin))
     xs_len = len(xs)
     # binning for each x variable
@@ -946,7 +946,8 @@ def woebin(dt, y, x=None,
               count_distr_limit=count_distr_limit,
               stop_limit=stop_limit, 
               bin_num_limit=bin_num_limit,
-              method=method
+              method=method,
+              bin_decimals=bin_decimals
             )
             # try catch:
             # "The variable '{}' caused the error: '{}'".format(x_i, error-info)
@@ -958,7 +959,7 @@ def woebin(dt, y, x=None,
           [breaks_list[i] if (breaks_list is not None) and (i in list(breaks_list.keys())) else None for i in xs],
           [special_values[i] if (special_values is not None) and (i in list(special_values.keys())) else None for i in xs],
           [init_count_distr]*xs_len, [count_distr_limit]*xs_len, 
-          [stop_limit]*xs_len, [bin_num_limit]*xs_len, [method]*xs_len
+          [stop_limit]*xs_len, [bin_num_limit]*xs_len, [method]*xs_len, [bin_decimals]*xs_len
         )
         # bins in dictionary
         init_bins, bins = dict(zip(xs, pool.starmap(woebin2, args)))

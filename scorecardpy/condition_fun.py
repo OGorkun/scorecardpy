@@ -197,10 +197,13 @@ def check_special_values(dt, special_values, xs):
     return special_values
 
 
-def check_max_bin_num(dt, xs, min_perc_fine_bin):
+def check_max_bin_num(dt, xs, min_perc_fine_bin, bin_decimals):
     var_one_bin = []
     for i in xs:
-        if max(dt[i].value_counts()) > (1 - min_perc_fine_bin) * len(dt.index):
+        dt_i = dt[i]
+        if is_numeric_dtype(dt_i):
+            dt_i = dt_i.round(decimals=bin_decimals)
+        if max(dt_i.value_counts()) > (1 - min_perc_fine_bin) * len(dt.index):
             var_one_bin = var_one_bin + [i]
     warnings.warn("There are {} x variables that cannot be splitted into bins, they are removed from x. \n({})".format(
         len(var_one_bin), ', '.join(var_one_bin)), stacklevel=2)
