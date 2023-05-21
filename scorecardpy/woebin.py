@@ -1490,7 +1490,7 @@ def woebin_adj(dt, y, bins, init_bins, adj_all_var=False, special_values=None,
     # return 
     breaks_list = "{"+', '.join('\''+bins_breakslist.index[i]+'\': ['+bins_breakslist[i]+']' for i in np.arange(len(bins_breakslist)))+"}"
     if save_breaks_list is not None:
-        _, bins_adj = woebin(dt, y, x=bins_breakslist.index, breaks_list=breaks_list)
+        _, bins_adj = woebin(dt, y, x=list(bins_breakslist.index.values), breaks_list=breaks_list)
         bins_to_breaks(bins_adj, dt, to_string=True, save_string=save_breaks_list)
     return breaks_list
     
