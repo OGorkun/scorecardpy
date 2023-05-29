@@ -710,8 +710,9 @@ def woebin2(dtm, init_count_distr, breaks=None, spl_val=None,
     # rbind binning_sv and binning
     binning = pd.concat(bin_list, keys=bin_list.keys()).reset_index()\
               .assign(is_sv = lambda x: x.level_0 =='binning_sv')
+    initial_binning = pd.concat([initial_binning.assign(is_sv=False), binning[binning['is_sv']==True].assign(is_sv=True)])
     # return
-    return initial_binning, binning_format(binning)
+    return binning_format(initial_binning), binning_format(binning)
 
 
 def bins_to_breaks(bins, dt, to_string=False, save_string=None):
@@ -1507,3 +1508,5 @@ def vars_iv(bins):
       'iv': iv
     })
     return vars_iv.sort_values('iv', ascending=False).reset_index(drop=True)
+
+
