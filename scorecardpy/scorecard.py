@@ -39,7 +39,7 @@ def ab(points0=540, odds0=1/9, pdo=40):
 
 
 
-def scorecard(bins, model, xcolumns, points0=540, odds0=1/9, pdo=40, basepoints_eq0=False, digits=0):
+def scorecard(bins, model, xcolumns, points0=540, odds0=1/9, pdo=40, start_zero=True, digits=0):
     '''
     Creating a Scorecard
     ------
@@ -53,12 +53,12 @@ def scorecard(bins, model, xcolumns, points0=540, odds0=1/9, pdo=40, basepoints_
     points0: Target points, default 540.
     odds0: Target odds, default 1/9. Odds = p/(1-p).
     pdo: Points to Double the Odds, default 40.
-    basepoints_eq0: Logical, default is FALSE. If it is TRUE, the
-      basepoints will equally distribute to each variable.
-    digits: The number of digits after the decimal point for points 
+    start_zero: Logical, default is TRUE. If it is TRUE, the 
+      scores for all variables will start from 0.
+    digits: The number of digits after the decimal point for points
       calculation. Default 0.
-    
-    
+
+
     Returns
     ------
     DataFrame
@@ -121,12 +121,15 @@ def scorecard(bins, model, xcolumns, points0=540, odds0=1/9, pdo=40, basepoints_
     len_x = len(coef_df)
     basepoints = a - b*model.intercept_[0]
     card = {}
-    if basepoints_eq0:
-        card['basepoints'] = pd.DataFrame({'variable':"basepoints", 'bin':np.nan, 'points':0}, index=np.arange(1))
+    if start_zero:
+        card['basepoints'] = pd.DataFrame({'variable':"basepoints", 'bin':np.nan, 'points':round(basepoints, ndigits=digits)}, index=np.arange(1))
         for i in coef_df.index:
             card[i] = bins.loc[bins['variable']==i,['variable', 'bin', 'woe']]\
-              .assign(points = lambda x: round(-b*x['woe']*coef_df[i] + basepoints/len_x), ndigits=digits)\
+              .assign(points = lambda x: round(-b*x['woe']*coef_df[i]), ndigits=digits)\
               [["variable", "bin", "points"]]
+            min_points = card[i]['points'].min()
+            card[i]['points'] = card[i]['points'] - min_points
+            card['basepoints']['points'] = card['basepoints']['points'] + min_points
     else:
         card['basepoints'] = pd.DataFrame({'variable':"basepoints", 'bin':np.nan, 'points':round(basepoints, ndigits=digits)}, index=np.arange(1))
         for i in coef_df.index:
