@@ -1510,3 +1510,39 @@ def vars_iv(bins):
     return vars_iv.sort_values('iv', ascending=False).reset_index(drop=True)
 
 
+def vars_filter(dt, bins, corr_threshold=0.7, iv_threshold=0.02, save_to='3_4_rejected_vars_fine_classing.xlsx'):
+    # IV for each variable
+    bins_iv = vars_iv(bins)
+    bins_iv = bins_iv.set_index(bins_iv['variable']+'_woe')
+
+    # filtering out by IV < threshold
+    var_list = []
+    for i in bins:
+        var_list = var_list + [i]
+    excl_iv = bins_iv[bins_iv['iv'] < iv_threshold]
+    var_excl_iv = bins_iv[bins_iv['iv'] < iv_threshold]['variable'].tolist()
+    var_list = list(set(var_list) - set(var_excl_iv))
+    bins_iv = bins_iv[bins_iv['variable'].isin(var_list)]
+
+    # correlation table for all woe variables
+    var_list_woe = [x+'_woe' for x in var_list]
+    dt_woe = woebin_ply(dt, bins=bins)
+    woe_corr = dt_woe[var_list_woe].corr()
+
+    # filtering out by correlation and IV
+    excl_corr = []
+    for i in bins_iv['variable']:
+        if i in var_list:
+            var_list_woe = [x+'_woe' for x in var_list]
+            woe_corr = woe_corr.loc[var_list_woe][var_list_woe]
+            var_excl_corr = list(woe_corr[(abs(woe_corr[i+'_woe']) > corr_threshold) & (woe_corr[i+'_woe'] < 1)].index.values)
+            var_list = [x for x in var_list if x+'_woe' not in var_excl_corr]
+            excl_corr_i = bins_iv.loc[var_excl_corr] #excl_corr[i]
+            excl_corr_i['corr_var'] = i
+            excl_corr_i['iv_corr_var'] = bins_iv.loc[i+'_woe']['iv']
+            excl_corr_i = excl_corr_i.join(woe_corr[i+'_woe']).rename(columns={i+'_woe': 'corr'})
+            excl_corr.append(excl_corr_i)
+    excl_all = pd.concat(excl_corr)
+    excl_all = pd.concat([excl_all, excl_iv], axis=0, ignore_index=True)
+    excl_all.to_excel(save_to)
+    return var_list, excl_all
