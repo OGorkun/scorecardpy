@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import time
 import os
 import platform
+from os.path import exists
 from .condition_fun import *
 from .info_value import *
 
@@ -717,7 +718,7 @@ def woebin2(dtm, init_count_distr, breaks=None, spl_val=None,
 
 def bins_to_breaks(bins, dt, to_string=False, save_string=None):
     if isinstance(bins, tuple):
-        bins = bins[0]
+        bins = bins[1]
     if isinstance(bins, dict):
         bins = pd.concat(bins, ignore_index=True)
 
@@ -736,9 +737,9 @@ def bins_to_breaks(bins, dt, to_string=False, save_string=None):
     bins_breakslist = bins_breakslist.groupby('variable', group_keys=False)['breaks'].agg(lambda x: ','.join(x))
     
     if to_string:
-        bins_breakslist = "breaks_list={\n"+', \n'.join('\''+bins_breakslist.index[i]+'\': ['+bins_breakslist[i]+']' for i in np.arange(len(bins_breakslist)))+"}"
+        bins_breakslist = "{"+', \n'.join('\''+bins_breakslist.index[i]+'\': ['+bins_breakslist[i]+']' for i in np.arange(len(bins_breakslist)))+"}"
         if save_string is not None:
-            brk_lst_name = '{}_{}.py'.format(save_string, time.strftime('%Y%m%d_%H%M%S', time.localtime(time.time())))
+            brk_lst_name = save_string
             with open(brk_lst_name, 'w') as f:
                 f.write(bins_breakslist)
             print('[INFO] The breaks_list is saved as {}'.format(brk_lst_name))
@@ -1328,7 +1329,7 @@ def woebin_adj_print_basic_info(i, xs, bins, dt, bins_breakslist, init_bins, sho
     
     
 # plot adjusted binning in woebin_adj
-def woebin_adj_break_plot(dt, y, x_i, breaks, stop_limit, sv_i, method):
+def woebin_adj_break_plot(dt, y, x_i, breaks, sv_i):
     '''
     update breaks and provies a binning plot
     
@@ -1344,7 +1345,7 @@ def woebin_adj_break_plot(dt, y, x_i, breaks, stop_limit, sv_i, method):
     breaks_list = None if breaks is None else {x_i: eval('['+breaks+']')}
     special_values = None if sv_i is None else {x_i: sv_i}
     # binx update
-    _, bins_adj = woebin(dt[[x_i,y]], y, breaks_list=breaks_list, special_values=special_values, stop_limit = stop_limit, method=method)
+    _, bins_adj = woebin(dt[[x_i,y]], y, breaks_list=breaks_list, special_values=special_values)
     
     ## print adjust breaks
     breaks_bin = set(bins_adj[x_i]['breaks']) - set(["-inf","inf","missing"])
@@ -1358,8 +1359,8 @@ def woebin_adj_break_plot(dt, y, x_i, breaks, stop_limit, sv_i, method):
     return breaks
     
     
-def woebin_adj(dt, y, bins, init_bins, adj_all_var=False, special_values=None,
-               method="tree", save_breaks_list=None, count_distr_limit=0.05, show_init_bins=False):
+def woebin_adj(dt, y, x=None, bins=None, init_bins=None, adj_all_var=False, special_values=None,
+               load_breaks_list=None, save_breaks_list=None, show_init_bins=False):
     '''
     WOE Binning Adjustment
     ------
@@ -1406,15 +1407,36 @@ def woebin_adj(dt, y, bins, init_bins, adj_all_var=False, special_values=None,
     breaks_adjII = sc.woebin_adj(dat, "creditability", binsII)
     bins_finalII = sc.woebin(dat, y="creditability", breaks_list=breaks_adjII)
     '''
-    # bins concat 
-    if isinstance(bins, dict):
+    # bins concat
+    if load_breaks_list is not None:
+        if exists(load_breaks_list):
+            breaks_list = eval(open(load_breaks_list).read())
+            _, bins = woebin(dt, y, x=list(breaks_list.keys()), breaks_list=breaks_list, special_values=special_values)
+            bins = pd.concat(bins, ignore_index=True)
+        else:
+            warnings.warn("Incorrect inputs; there is no file named \'{}\'. Please check load_breaks_list parameter."
+                          .format(load_breaks_list), stacklevel=2)
+            if not isinstance(bins, dict):
+                raise Exception("Incorrect inputs; bins should be a dict; or you can provide load_breaks_list")
+            else:
+                bins = pd.concat(bins, ignore_index=True)
+    elif not isinstance(bins, dict):
+        raise Exception("Incorrect inputs; bins should be a dict; or you can provide load_breaks_list")
+    else:
         bins = pd.concat(bins, ignore_index=True)
+
+
     # x variables
-    xs_all = bins['variable'].unique()
+    if x is None:
+        xs_all = bins['variable'].unique()
+    else:
+        xs_all = x
     # adjust all variables
     if not adj_all_var:
-        bins2 = bins.loc[~((bins['bin'] == 'missing') & (bins['count_distr'] >= count_distr_limit))].reset_index(drop=True)
-        bins2['badprob2'] = bins2.groupby('variable', group_keys=False).apply(lambda x: x['badprob'].shift(1)).reset_index(drop=True)
+        bins2 = bins[(bins['is_special_values'] == False)
+                     & (bins['variable'].isin(xs_all))
+                     & ((bins['breaks'].str.replace(".", "").str.isnumeric()) | (bins['breaks'] == 'inf'))]
+        bins2['badprob2'] = bins2.groupby('variable')['badprob'].shift()
         bins2 = bins2.dropna(subset=['badprob2']).reset_index(drop=True)
         bins2 = bins2.assign(badprob_trend = lambda x: x.badprob >= x.badprob2)
         xs_adj = bins2.groupby('variable', group_keys=False)['badprob_trend'].nunique()
@@ -1436,7 +1458,7 @@ def woebin_adj(dt, y, bins, init_bins, adj_all_var=False, special_values=None,
     # else 
     def menu(i, xs_len, x_i):
         print('>>> Adjust breaks for ({}/{}) {}?'.format(i, xs_len, x_i))
-        print('1: next \n2: yes \n3: back')
+        print('0: finish \n1: next \n2: yes \n3: back')
         adj_brk = input("Selection: ")
         while isinstance(adj_brk,str):
             if str(adj_brk).isdigit():
@@ -1464,18 +1486,15 @@ def woebin_adj(dt, y, bins, init_bins, adj_all_var=False, special_values=None,
         # adjusting breaks ------
         adj_brk = menu(i, xs_len, x_i)
         if adj_brk == 0: 
-            return 
+            break
         while adj_brk == 2:
             # modify breaks adj_brk == 2
             breaks = input(">>> Enter modified breaks: ")
             breaks = re.sub("^[,\.]+|[,\.]+$", "", breaks)
             if breaks == 'N':
-                stop_limit = 'N'
                 breaks = None
-            else:
-                stop_limit = 0.1
             try:
-                breaks = woebin_adj_break_plot(dt, y, x_i, breaks, stop_limit, sv_i, method=method)
+                breaks = woebin_adj_break_plot(dt, y, x_i, breaks, sv_i)
             except:
                 pass
             # adj breaks again
