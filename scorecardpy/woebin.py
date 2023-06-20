@@ -735,6 +735,10 @@ def bins_to_breaks(bins, dt, to_string=False, save_string=None):
     bins_breakslist = pd.merge(bins_breakslist[['variable', 'breaks']], vars_class, how='left', on='variable')
     bins_breakslist.loc[bins_breakslist['not_numeric'], 'breaks'] = '\''+bins_breakslist.loc[bins_breakslist['not_numeric'], 'breaks']+'\''
     bins_breakslist = bins_breakslist.groupby('variable', group_keys=False)['breaks'].agg(lambda x: ','.join(x))
+
+    for i in xs_all:
+        if i not in bins_breakslist.index:
+            bins_breakslist = pd.concat([bins_breakslist, pd.Series(['inf'], index=[i])])
     
     if to_string:
         bins_breakslist = "{"+', \n'.join('\''+bins_breakslist.index[i]+'\': ['+bins_breakslist[i]+']' for i in np.arange(len(bins_breakslist)))+"}"
@@ -888,6 +892,7 @@ def woebin(dt, y, x=None,
     # print_step
     print_step = check_print_step(print_step)
     # breaks_list
+    breaks_list = breaks_list.replace("[inf]", "[np.inf]")
     breaks_list = check_breaks_list(breaks_list, xs)
     # special_values
     special_values = check_special_values(dt, special_values, xs)
@@ -1512,6 +1517,7 @@ def woebin_adj(dt, y, x=None, bins=None, init_bins=None, adj_all_var=False, spec
     if save_breaks_list is not None:
         _, bins_adj = woebin(dt, y, x=list(bins_breakslist.index.values), breaks_list=breaks_list)
         bins_to_breaks(bins_adj, dt, to_string=True, save_string=save_breaks_list)
+        breaks_list = breaks_list.replace("[inf]", "[np.inf]")
     return breaks_list
     
 
