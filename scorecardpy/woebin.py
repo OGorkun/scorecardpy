@@ -455,10 +455,10 @@ def woebin2_tree(dtm, init_count_distr, count_distr_limit=0.05, bin_decimals=4,
     bin_list = woebin2_init_bin(dtm, init_count_distr=init_count_distr, breaks=breaks, spl_val=spl_val, bin_decimals=bin_decimals)
     initial_binning = bin_list['initial_binning']
     binning_sv = bin_list['binning_sv']
-    if initial_binning is None: # fix next condition npe
-        return {'binning_sv':binning_sv, 'binning':None}
-    if len(initial_binning.index)==1: 
-        return {'binning_sv':binning_sv, 'binning':initial_binning}
+    if initial_binning is None:  # fix next condition npe
+        return {'binning_sv': binning_sv, 'binning': None}, initial_binning
+    if len(initial_binning.index) == 1:
+        return {'binning_sv': binning_sv, 'binning': initial_binning}, initial_binning
     # initialize parameters
     len_brks = len(initial_binning.index)
     bestbreaks = None
@@ -557,8 +557,8 @@ def woebin2_chimerge(dtm, init_count_distr, count_distr_limit=0.05, bin_decimals
     initial_binning = bin_list['initial_binning']
     binning_sv = bin_list['binning_sv']
     # return initial binning if its row number equals 1
-    if len(initial_binning.index)==1: 
-        return {'binning_sv':binning_sv, 'binning':initial_binning}
+    if len(initial_binning.index) == 1:
+        return {'binning_sv': binning_sv, 'binning': initial_binning}, initial_binning
 
     # dtm_rows
     dtm_rows = len(dtm.index)    
