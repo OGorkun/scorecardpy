@@ -1026,7 +1026,7 @@ def woepoints_ply1(dtx, binx, x_i, woe_points):
         # mask = dtx[x_i].isin(binx_sv['V1'])
         try:
             # when binx_sv['V1'] is not int then cast type
-            mask = dtx[x_i].isin(binx_sv['V1'].astype('int'))
+            mask = dtx[x_i].astype('Int64').isin(binx_sv.loc[~binx_sv['V1'].str.isalpha()]['V1'].astype('float').astype('Int64'))
         except:
             # if can not cast then use as is
             mask = dtx[x_i].isin(binx_sv['V1'])
