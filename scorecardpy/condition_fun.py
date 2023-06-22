@@ -169,6 +169,7 @@ def check_breaks_list(breaks_list, xs):
     if breaks_list is not None:
         # is string
         if isinstance(breaks_list, str):
+            breaks_list = breaks_list.replace("[inf]", "[np.inf]")
             breaks_list = eval(breaks_list) # TODO - check eval step
         # is not dict
         if not isinstance(breaks_list, dict):

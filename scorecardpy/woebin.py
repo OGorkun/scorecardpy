@@ -892,7 +892,6 @@ def woebin(dt, y, x=None,
     # print_step
     print_step = check_print_step(print_step)
     # breaks_list
-    breaks_list = breaks_list.replace("[inf]", "[np.inf]")
     breaks_list = check_breaks_list(breaks_list, xs)
     # special_values
     special_values = check_special_values(dt, special_values, xs)
@@ -1514,7 +1513,7 @@ def woebin_adj(dt, y, x=None, bins=None, init_bins=None, adj_all_var=False, spec
             i += 1
     # return 
     breaks_list = "{"+', '.join('\''+bins_breakslist.index[i]+'\': ['+bins_breakslist[i]+']' for i in np.arange(len(bins_breakslist)))+"}"
-    if save_breaks_list is not None:
+    if isinstance(save_breaks_list, str):
         _, bins_adj = woebin(dt, y, x=list(bins_breakslist.index.values), breaks_list=breaks_list)
         bins_to_breaks(bins_adj, dt, to_string=True, save_string=save_breaks_list)
         breaks_list = breaks_list.replace("[inf]", "[np.inf]")
