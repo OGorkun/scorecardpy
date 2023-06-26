@@ -1414,7 +1414,9 @@ def woebin_adj(dt, y, x=None, bins=None, init_bins=None, adj_all_var=False, spec
     # bins concat
     if load_breaks_list is not None:
         if exists(load_breaks_list):
-            breaks_list = eval(open(load_breaks_list).read())
+            breaks_list = open(load_breaks_list).read()
+            breaks_list = breaks_list.replace("[inf]", "[np.inf]")
+            breaks_list = eval(breaks_list)
             _, bins = woebin(dt, y, x=list(breaks_list.keys()), breaks_list=breaks_list, special_values=special_values)
             bins = pd.concat(bins, ignore_index=True)
         else:
