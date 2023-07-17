@@ -9,19 +9,20 @@ from scorecardpy.woebin import *
 # load germancredit data
 smp_full = germancredit()
 smp_full['target'] = smp_full['creditability'].apply(lambda x: 1 if x == 'bad' else 0)
-smp_full = smp_full.drop(columns=['creditability'])
-smp_full.loc[0:95, 'credit_amount'] = np.nan
+smp_full = smp_full.drop(columns = ['creditability'])
+smp_full.loc[0:99, 'credit_amount'] = np.nan
 smp_full.loc[0:99, 'purpose'] = np.nan
 smp_full.loc[100:109, 'target'] = np.nan
-smp_full.loc[80:100, 'age_in_years'] = -9999999
-smp_full.loc[40:80, 'age_in_years'] = np.nan
-smp_full['credit_test'] = 1/smp_full['credit_amount']
+smp_full.loc[0:40, 'age_in_years'] = np.nan
+smp_full.loc[40:60, 'age_in_years'] = -9999
 
 for i in range(5):
     smp_full = pd.concat([smp_full, smp_full])
 smp_full['RepDate_End'] = np.random.randint(1, 73, smp_full.shape[0])
 smp_full = smp_full.reset_index(drop=True)
 
+
+# 1. Exploratory analysis of variables (missings, outliers, concentration/distribution) - based on smp_full
 # good/bad label
 target = 'target'
 
@@ -36,6 +37,7 @@ var_skip_all = var_skip + [target, date]
 
 # special values for numeric variables
 special_values = [-9999999]
+
 
 # heatmap for the missing values
 # miss_heatmap(smp_full, var_skip, fig_width=10, fig_height=6)
@@ -73,6 +75,7 @@ target_ot = smp_full.groupby(date)[target].agg([nan_rate, bad_rate])
 # target_ot['bad_rate'].plot.bar()
 
 
+# 2. Development sample creation
 # selection of the development window
 smp_dev = smp_full[smp_full[date].between(1, 60)]
 
@@ -113,6 +116,7 @@ sqldf(query)
 
 
 
+# 3. Automated binning
 # min bin size for fine classing
 min_perc_fine_bin = 0.05
 
@@ -162,55 +166,3 @@ coarse_class_filt = {k: v for k, v in coarse_class.items() if k in var_list}
 # woebin_plot(coarse_class_filt)
 
 
-# manual review and adjustment of binning (results are being saved to save_breaks_list and can be loaded from load_breaks_list)
-breaks_list = woebin_adj(train, y = target,
-                            x = ['age_in_years','purpose'],
-                            load_breaks_list = '3_5_breaks_list_adj.py',
-                            save_breaks_list = '3_5_breaks_list_adj.py',
-                            bins = coarse_class_filt, # used in case load_breaks_list is None or not exists
-                            init_bins = fine_class,
-                            adj_all_var = True, # False - only non-monotonic woe variables
-                            show_init_bins = False, # True - to show the table with Fine classing results
-                            special_values = special_values)
-
-
-# variables excluded based on coarse classing results
-var_rej_coarse = ['credit_history']
-
-
-# coarse classing after manual adjustments
-_, coarse_class_adj = woebin(train, y = target,
-                                x = list(eval(breaks_list).keys()),
-                                breaks_list = breaks_list,
-                                var_skip = var_rej_coarse,
-                                special_values = special_values,
-                                min_perc_fine_bin = min_perc_fine_bin,
-                                count_distr_limit = count_distr_limit,
-                                bin_num_limit = bin_num_limit,
-                                print_step = 1,
-                                ignore_datetime_cols = False,
-                                bin_decimals = bin_decimals)
-
-
-# applying woe transformations on train and test samples
-train_woe = sc.woebin_ply(train, bins=coarse_class_adj)
-test_woe = sc.woebin_ply(test, bins=coarse_class_adj)
-
-# defining woe variables
-vars_woe = []
-for i in list(coarse_class_adj.keys()):
-    vars_woe.append(i+'_woe')
-
-
-# results of the final coarse classing after manual adjustments !update
-pd.concat(coarse_class_adj.values()).reset_index(drop=True).to_excel('3_6_coarse_classing_adj.xlsx')
-coarse_class_adj_iv = sc.vars_iv(coarse_class_adj)
-coarse_class_adj_iv.to_excel('3_7_coarse_classing_adj_iv.xlsx')
-coarse_class_adj_iv
-
-
-# IV for variables by defined subsamples (period, product etc.)
-# sc.iv_group(train_woe,
-#             var_list = ["age_in_years_woe"],
-#             groupby = "personal_status_and_sex",
-#             y = target)
