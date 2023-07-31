@@ -259,4 +259,8 @@ def scorecard_ply(dt, card, only_total_score=True, print_step=0, replace_blank_n
     return dat_score
     
     
-
+def pd_from_score(score, points0=540, odds0=1/9, pdo=40):
+    b = pdo/np.log(2)
+    a = points0 + b*np.log(odds0)
+    pd = 1/(1+np.exp(score/b - a/b))
+    return pd
