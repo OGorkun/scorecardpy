@@ -1,3 +1,6 @@
+import pandas as pd
+import numpy as np
+
 def germancredit_breaks_list():
     germancredit_breaks_list = {'age_in_years': [30.0,40.0],
         'credit_amount': [983.0,2788.0,4042.0,6579.0],
@@ -14,7 +17,7 @@ def germancredit_breaks_list():
     return germancredit_breaks_list
 
 def germancredit_scorecard_points():
-    germancredit_scorecard_points = {'basepoints': pd.DataFrame({'variable': ['basepoints'], 'bin': [nan], 'points': [232.0]}),
+    germancredit_scorecard_points = {'basepoints': pd.DataFrame({'variable': ['basepoints'], 'bin': [np.nan], 'points': [232.0]}),
         'credit_amount': pd.DataFrame({'variable': ['credit_amount', 'credit_amount', 'credit_amount', 'credit_amount', 'credit_amount', 'credit_amount'], 'bin': ['missing', '[-inf,983.0)', '[983.0,2788.0)', '[2788.0,4042.0)', '[4042.0,6579.0)', '[6579.0,inf)'], 'points': [43.0, 27.0, 38.0, 52.0, 21.0, 0.0]}),
         'property': pd.DataFrame({'variable': ['property', 'property', 'property', 'property'], 'bin': ['real estate', 'building society savings agreement/ life insurance', 'car or other, not in attribute Savings account/bonds', 'unknown / no property'], 'points': [26.0, 15.0, 14.0, 0.0]}),
         'duration_in_month': pd.DataFrame({'variable': ['duration_in_month', 'duration_in_month', 'duration_in_month', 'duration_in_month', 'duration_in_month'], 'bin': ['[-inf,12.0)', '[12.0,18.0)', '[18.0,21.0)', '[21.0,36.0)', '[36.0,inf)'], 'points': [85.0, 53.0, 30.0, 38.0, 0.0]}),
