@@ -4,6 +4,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from pandasql import sqldf
 from scorecardpy.woebin import *
+from sklearn.linear_model import LogisticRegression
 
 # data prepare ------
 # load germancredit data
@@ -154,15 +155,88 @@ coarse_class_iv
 
 
 # automated filtering of variables using iv and correlation from the fine classing
-var_list, var_rej_fine = vars_filter(train, fine_class, corr_threshold = 0.7, iv_threshold = 0.02)
+var_auto, var_rej_fine = vars_filter(train, fine_class, corr_threshold = 0.7, iv_threshold = 0.02)
 var_rej_fine
 
 
 # removing excluded variables from coarse_class dictionary
-coarse_class_filt = {k: v for k, v in coarse_class.items() if k in var_list}
+coarse_class_filt = {k: v for k, v in coarse_class.items() if k in var_auto}
 
 
 # binning visualization
 # woebin_plot(coarse_class_filt)
 
+
+# 5. Correlation analysis
+# applying woe transformations on train and test samples
+train_woe = woebin_ply(train, bins=coarse_class_filt)
+test_woe = woebin_ply(test, bins=coarse_class_filt)
+
+# defining woe variables
+vars_woe = []
+for i in list(coarse_class_filt.keys()):
+    vars_woe.append(i+'_woe')
+
+
+# results of the final coarse classing after manual adjustments !update
+pd.concat(coarse_class_filt.values()).reset_index(drop=True).to_excel('4_2_coarse_classing_adj.xlsx')
+coarse_class_adj_iv = vars_iv(coarse_class_filt)
+coarse_class_adj_iv.to_excel('4_3_coarse_classing_adj_iv.xlsx')
+coarse_class_adj_iv
+
+
+# correlation matrix
+train_woe_corr = train_woe[vars_woe].corr()
+train_woe_corr.to_excel('5_1_correlation_matrix.xlsx')
+train_woe_corr
+
+
+# automated filtering of variables using iv and correlation from the fine classing
+vars_cand_1, var_rej_corr = vars_filter(train, coarse_class_filt, corr_threshold = 0.7, iv_threshold = 0.05)
+var_rej_corr
+
+
+# 6. Logistic regression
+# list of woe variables
+vars_woe = []
+for i in vars_cand_1:
+    vars_woe.append(i + '_woe')
+
+# target and variables
+y_train = train_woe['target']
+X_train = train_woe[vars_woe]
+y_test = test_woe['target']
+X_test = test_woe[vars_woe]
+
+# logistic regression ------
+lr = LogisticRegression(penalty='l1', C=0.9, solver='saga', n_jobs=-1)
+lr.fit(X_train, y_train)
+# lr.coef_
+# lr.intercept_
+
+
+# predicted proability
+train_pred = lr.predict_proba(X_train)[:, 1]
+test_pred = lr.predict_proba(X_test)[:, 1]
+# performance ks & roc ------
+train_perf = perf_eva(y_train, train_pred, title="train")
+test_perf = perf_eva(y_test, test_pred, title="test")
+
+# train bad rate
+train_br = {}
+train_br['Total'] = y_train.count()
+train_br['Bads'] = int(y_train.sum())
+train_br['Bad Rate'] = round(train_br['Bads'] / train_br['Total'], 4)
+# test bad rate
+test_br = {}
+test_br['Total'] = y_test.count()
+test_br['Bads'] = int(y_test.sum())
+test_br['Bad Rate'] = round(test_br['Bads'] / test_br['Total'], 4)
+test_br
+# combining bad rate with performance
+perf = pd.DataFrame({'train': pd.Series(dict(list(train_br.items()) + list(train_perf.items()))),
+                     'test': pd.Series(dict(list(test_br.items()) + list(test_perf.items())))})
+perf = perf.loc[~perf.index.isin(['pic'])]
+perf.to_excel('6_1_1_perf_train_test.xlsx')
+perf
 
