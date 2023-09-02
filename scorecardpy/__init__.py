@@ -11,7 +11,8 @@ from scorecardpy.scorecard import (scorecard, scorecard_ply, pd_from_score)
 from scorecardpy.one_hot import one_hot
 from scorecardpy.vif import vif
 from scorecardpy.expl_analysis import (miss_heatmap, expl_analysis, nan_treatment, var_distr, hhi)
-
+from scorecardpy.germancredit_model import (germancredit_breaks_list, germancredit_scorecard_points)
+from scorecardpy.calibration import calibration
 
 __version__ = '0.2.0.0'
 
@@ -25,5 +26,7 @@ __all__ = (
     scorecard, scorecard_ply, pd_from_score,
     one_hot,
     vif,
-    miss_heatmap, expl_analysis, nan_treatment, var_distr, hhi
+    miss_heatmap, expl_analysis, nan_treatment, var_distr, hhi,
+    germancredit_breaks_list, germancredit_scorecard_points,
+    calibration
 )

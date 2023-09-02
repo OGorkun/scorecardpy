@@ -3,7 +3,7 @@ import pandas as pd
 from sklearn.linear_model import LogisticRegression
 
 
-def calibration(smp, score=score, target=target, points0=540, odds0=1/9, pdo=40):
+def calibration(smp, score='score', target='target', points0=540, odds0=1/9, pdo=40):
     b = pdo / np.log(2)
     a = points0 + b * np.log(odds0)
     log_odds = a / b - smp[score] / b
@@ -13,7 +13,7 @@ def calibration(smp, score=score, target=target, points0=540, odds0=1/9, pdo=40)
     lr_calib = LogisticRegression(penalty='none', solver='newton-cg', n_jobs=-1)
     lr_calib.fit(x, y)
 
-    pd_calib = lr_calib.predict_proba(x_calib)[:, 1]
+    pd_calib = lr_calib.predict_proba(x)[:, 1]
     log_odds_calib = np.log((1 - pd_calib) / (pd_calib))
 
     intercept_calib = points0 + (np.log(odds0) - lr_calib.intercept_) * pdo / np.log(2)
