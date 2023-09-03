@@ -21,6 +21,6 @@ def calibration(smp, score='score', target='target', points0=540, odds0=1/9, pdo
     intercept_calib = intercept_calib[0]
     slope_calib = slope_calib[0, 0]
 
-    intercept = intercept_calib - slope_calib * a / b
-    slope = slope_calib / b
+    intercept = round(intercept_calib - slope_calib * a / b)
+    slope = round(slope_calib / b, 4)
     return intercept, slope
