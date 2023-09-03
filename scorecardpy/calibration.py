@@ -10,7 +10,7 @@ def calibration(smp, score='score', target='target', points0=540, odds0=1/9, pdo
     x = log_odds.to_numpy().reshape(-1, 1)
     y = smp[target].to_numpy()
 
-    lr_calib = LogisticRegression(penalty='none', solver='newton-cg', n_jobs=-1)
+    lr_calib = LogisticRegression(penalty=None, solver='newton-cg', n_jobs=-1)
     lr_calib.fit(x, y)
 
     pd_calib = lr_calib.predict_proba(x)[:, 1]
