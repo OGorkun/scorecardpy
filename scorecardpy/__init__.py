@@ -6,7 +6,8 @@ from scorecardpy.info_value import iv
 # from .info_ent_indx_gini import (ig, ie)
 from scorecardpy.var_filter import var_filter
 from scorecardpy.woebin import (woebin, woebin_ply, woebin_plot, woebin_adj, vars_iv, vars_filter)
-from scorecardpy.perf import (perf_eva, perf_psi, iv_group, gini_vars, gini_over_time, score_ranges, score_distr, psi, psi_vars, psi_over_time)
+from scorecardpy.perf import (perf_eva, perf_psi, iv_group, gini_vars, gini_over_time, score_ranges, score_distr,
+                              psi, psi_vars, psi_over_time, psi_prev_period_ot)
 from scorecardpy.scorecard import (scorecard, scorecard_ply, pd_from_score)
 from scorecardpy.one_hot import one_hot
 from scorecardpy.vif import vif
@@ -22,7 +23,8 @@ __all__ = (
     iv,
     var_filter,
     woebin, woebin_ply, woebin_plot, woebin_adj, vars_iv, vars_filter,
-    perf_eva, perf_psi, iv_group, gini_vars, gini_over_time, score_ranges, score_distr, psi, psi_vars, psi_over_time,
+    perf_eva, perf_psi, iv_group, gini_vars, gini_over_time, score_ranges, score_distr,
+    psi, psi_vars, psi_over_time, psi_prev_period_ot,
     scorecard, scorecard_ply, pd_from_score,
     one_hot,
     vif,

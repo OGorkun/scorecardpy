@@ -698,14 +698,21 @@ def psi(expected_share, actual_share):
     return (psi_value)
 
 
-def psi_vars(ref_sample, sample, vars_list, result_name):
+def psi_vars(ref_sample, sample, vars_list, result_name, n_obs=None):
     psi_vars = []
     for var in vars_list:
-        ref_sample_groups = ref_sample.groupby([var]).size()
+        if n_obs is None:
+            ref_sample_groups = ref_sample.groupby([var]).size()
+        else:
+            ref_sample_groups = ref_sample[[n_obs, var]].groupby([var]).sum()[n_obs]
+
         ref_sample_groups_df = pd.DataFrame({'Total': ref_sample_groups})
         ref_sample_groups_df['Total_Share'] = ref_sample_groups_df['Total'] / ref_sample_groups_df['Total'].sum()
 
-        sample_groups = sample.groupby([var]).size()
+        if n_obs is None:
+            sample_groups = sample.groupby([var]).size()
+        else:
+            sample_groups = sample[[n_obs, var]].groupby([var]).sum()[n_obs]
         sample_groups_df = pd.DataFrame({'Total1': sample_groups})
         sample_groups_df = pd.merge(ref_sample_groups_df, sample_groups_df, left_index=True, right_index=True,
                                     how="outer")
@@ -720,12 +727,25 @@ def psi_vars(ref_sample, sample, vars_list, result_name):
     return psi_vars_df
 
 
-def psi_over_time(ref_sample, sample, vars_list, date):
+def psi_over_time(ref_sample, sample, vars_list, date, n_obs=None):
     sorted_date = sorted(sample[date].unique())
     psi_ot = pd.DataFrame([])
     for i in sorted_date:
         sample_date = sample.loc[sample[date] == i]
-        psi_date = psi_vars(ref_sample, sample_date, vars_list, i)
+        psi_date = psi_vars(ref_sample, sample_date, vars_list, i, n_obs)
+        psi_date = psi_date.rename(columns={"Variable": date})
+        psi_date = psi_date.set_index(date).T
+        psi_ot = pd.concat([psi_ot, psi_date])
+    return psi_ot
+
+
+def psi_prev_period_ot(sample, vars_list, date, n_obs=None):
+    sorted_date = sorted(sample[date].unique())
+    psi_ot = pd.DataFrame([])
+    for i in range(len(sorted_date)-1):
+        sample_date = sample.loc[sample[date] == sorted_date[i+1]]
+        ref_sample = sample.loc[sample[date] == sorted_date[i]]
+        psi_date = psi_vars(ref_sample, sample_date, vars_list, sorted_date[i+1], n_obs)
         psi_date = psi_date.rename(columns={"Variable": date})
         psi_date = psi_date.set_index(date).T
         psi_ot = pd.concat([psi_ot, psi_date])
