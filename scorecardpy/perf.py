@@ -612,22 +612,30 @@ def iv_group(smp, var_list, groupby, y):
     return iv_groups
 
 
-def gini_vars(sample, target, vars_list, result_name):
+def gini_vars(sample, target, vars_list, result_name, weight=None):
     gini_vars = []
     for var in vars_list:
-        gini_var = -(roc_auc_score(sample[target], sample[var]) * 2 - 1)
+        if weight is not None:
+            sample_target =  pd.Series([1]*len(sample) + [0]*len(sample))
+            sample_var = pd.concat([sample[var], sample[var]], axis=0)
+            sample_weight = pd.concat([sample[target]*sample[weight], (1 - sample[target])*sample[weight]], axis=0)
+        else:
+            sample_target = sample[target]
+            sample_var = sample[var]
+            sample_weight = None
+        gini_var = -(roc_auc_score(sample_target, sample_var, sample_weight=sample_weight) * 2 - 1)
         gini_vars.append(gini_var)
     gini_vars_df = pd.DataFrame({'Variable': vars_list, result_name: gini_vars})
     return gini_vars_df
 
 
-def gini_over_time(sample, target, vars_list, date):
+def gini_over_time(sample, target, vars_list, date, weight=None):
     sorted_date = sorted(sample[date].unique())
     # del sorted_date[-12:]
     gini_ot = pd.DataFrame([])
     for i in sorted_date:
         sample_date = sample.loc[sample[date] == i]
-        gini_date = gini_vars(sample_date, target, vars_list, i)
+        gini_date = gini_vars(sample_date, target, vars_list, result_name = i, weight=weight)
         gini_date = gini_date.rename(columns={"Variable": "Period"})
         gini_date = gini_date.set_index('Period').T
         gini_ot = pd.concat([gini_ot, gini_date])
