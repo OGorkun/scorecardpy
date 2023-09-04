@@ -40,3 +40,8 @@
 /.idea/.gitignore
 /.idea/misc.xml
 /.idea/modules.xml
+/6_2_5_scorecard_points.py
+/1_scorecard_performance.xlsx
+/2_recalibration.xlsx
+/3_PD_estimation.xlsx
+/.ipynb_checkpoints/Model Review-checkpoint.ipynb
