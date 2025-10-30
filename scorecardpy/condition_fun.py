@@ -56,13 +56,29 @@ def rep_blank_na(dat): # cant replace blank string in categorical value with nan
     if dat.index.duplicated().any():
         dat = dat.reset_index(drop = True)
         warnings.warn('There are duplicated index in dataset. The index has been reseted.')
-    
-    blank_cols = [i for i in list(dat) if dat[i].astype(str).str.findall(r'^\s*$').apply(lambda x:0 if len(x)==0 else 1).sum()>0]
+
+    # replace "" with NaN
+    blank_cols = [col for col in list(dat) if
+                  dat[col].astype(str).str.findall(r'^\s*$').apply(lambda x: 0 if len(x) == 0 else 1).sum() > 0]
     if len(blank_cols) > 0:
-        warnings.warn('There are blank strings in {} columns, which are replaced with NaN. \n (ColumnNames: {})'.format(len(blank_cols), ', '.join(blank_cols)))
-#        dat[dat == [' ','']] = np.nan
-#        dat2 = dat.apply(lambda x: x.str.strip()).replace(r'^\s*$', np.nan, regex=True)
-        dat.replace(r'^\s*$', np.nan, regex=True)
+        warnings.warn('There are blank strings in {} columns, which are replaced with NaN. \n (ColumnNames: {})'.format(
+            len(blank_cols), ', '.join(blank_cols)))
+        #        dat[dat == [' ','']] = np.nan
+        #        dat2 = dat.apply(lambda x: x.str.strip()).replace(r'^\s*$', np.nan, regex=True)
+        for col in blank_cols:
+            dat.loc[dat[col] == "", col] = np.nan
+
+    # replace inf with -999
+    cols_num = [col for col in list(dat) if col not in blank_cols]
+    if len(cols_num) > 0:
+        cols_inf = [col for col in cols_num if
+                        any(dat[col] == np.inf) | any(dat[col] == -np.inf)]
+        if len(cols_inf) > 0:
+            warnings.warn(
+                'There are infinite or NaN values in {} columns, which are replaced with -999.\n (ColumnNames: {})'.format(
+                    len(cols_inf), ', '.join(cols_inf)))
+            for col in cols_inf:
+                dat.loc[(dat[col] == np.inf) | (dat[col] == -np.inf), col] = -999
     
     return dat
 
@@ -78,8 +94,6 @@ def check_y(dat, y, positive):
     elif dat.shape[1] <= 1:
         raise Exception("Incorrect inputs; dat should be a DataFrame with at least two columns.")
 
-
-    
     # y ------
     y = str_to_list(y)
     # length of y == 1
@@ -97,10 +111,9 @@ def check_y(dat, y, positive):
         dat = dat.dropna(subset=[y])
         # dat = dat[pd.notna(dat[y])]
     
-    
     # numeric y to int
-    if is_numeric_dtype(dat[y]):
-        dat.loc[:,y] = dat[y].apply(lambda x: x if pd.isnull(x) else int(x)) #dat[y].astype(int)
+    if is_numeric_dtype(dat[y]): # TODO - add check for nan
+        dat = dat.astype({y: int})#dat[y].apply(lambda x: x if pd.isnull(x) else int(x)) #dat[y].astype(int)
     # length of unique values in y
     unique_y = np.unique(dat[y].values)
     if len(unique_y) == 2:
@@ -156,7 +169,8 @@ def check_breaks_list(breaks_list, xs):
     if breaks_list is not None:
         # is string
         if isinstance(breaks_list, str):
-            breaks_list = eval(breaks_list)
+            breaks_list = breaks_list.replace("[inf]", "[np.inf]")
+            breaks_list = eval(breaks_list) # TODO - check eval step
         # is not dict
         if not isinstance(breaks_list, dict):
             raise Exception("Incorrect inputs; breaks_list should be a dict.")
@@ -164,18 +178,34 @@ def check_breaks_list(breaks_list, xs):
 
 
 # check special_values
-def check_special_values(special_values, xs):
+def check_special_values(dt, special_values, xs):
     if special_values is not None:
         # # is string
         # if isinstance(special_values, str):
         #     special_values = eval(special_values)
         if isinstance(special_values, list):
-            warnings.warn("The special_values should be a dict. Make sure special values are exactly the same in all variables if special_values is a list.")
+            #warnings.warn("The special_values should be a dict. Make sure special values are exactly the same in all variables if special_values is a list.")
             sv_dict = {}
             for i in xs:
-                sv_dict[i] = special_values
+                for spl_val in special_values:
+                    sv_i = []
+                    if spl_val in dt[i].unique():
+                        sv_i = sv_i + [spl_val]
+                if sv_i: sv_dict[i] = sv_i
             special_values = sv_dict
         elif not isinstance(special_values, dict): 
             raise Exception("Incorrect inputs; special_values should be a list or dict.")
     return special_values
 
+
+def check_max_bin_num(dt, xs, min_perc_fine_bin, bin_decimals):
+    var_one_bin = []
+    for i in xs:
+        dt_i = dt[i]
+        if is_numeric_dtype(dt_i):
+            dt_i = dt_i.round(decimals=bin_decimals)
+        if max(dt_i.value_counts()) > (1 - min_perc_fine_bin) * len(dt.index):
+            var_one_bin = var_one_bin + [i]
+    warnings.warn("There are {} x variables that cannot be splitted into bins, they are removed from x. \n({})".format(
+        len(var_one_bin), ', '.join(var_one_bin)), stacklevel=2)
+    return var_one_bin

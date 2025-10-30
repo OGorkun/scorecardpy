@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import time
 import os
 import platform
+from os.path import exists
 from .condition_fun import *
 from .info_value import *
 
@@ -112,7 +113,20 @@ def dtm_binning_sv(dtm, breaks, spl_val):
               sv_df['value'].astype(dtm['value'].dtypes).astype(str))
             # sv_df = sv_df.assign(value = lambda x: x.value.astype(dtm['value'].dtypes))
         # dtm_sv & dtm
-        dtm_sv = pd.merge(dtm.fillna("missing"), sv_df[['value']].fillna("missing"), how='inner', on='value')
+        # dtm_sv = pd.merge(dtm.fillna("missing"), sv_df[['value']].fillna("missing"), how='inner', on='value', right_index=True)
+        if None in dtm.index.names and len(dtm.index.names)==1: 
+            dtm_index='index'
+        elif None in dtm.index.names and len(dtm.index.names)>1:
+            raise ValueError("multiindex's names contain Nonetype")
+        else:
+            dtm_index=dtm.index.names #update by ZK
+        
+        dtm_sv = pd.merge(
+          dtm.fillna("missing").reset_index(),
+          sv_df[['value']].fillna("missing"), 
+          how='inner', on='value'
+        ).set_index(dtm_index) #update by ZK
+
         dtm = dtm[~dtm.index.isin(dtm_sv.index)].reset_index() if len(dtm_sv.index) < len(dtm.index) else None
         # dtm_sv = dtm.query('value in {}'.format(sv_df['value'].tolist()))
         # dtm    = dtm.query('value not in {}'.format(sv_df['value'].tolist()))
@@ -121,11 +135,11 @@ def dtm_binning_sv(dtm, breaks, spl_val):
             return {'binning_sv':None, 'dtm':dtm}
         # binning_sv
         binning_sv = pd.merge(
-          dtm_sv.fillna('missing').groupby(['variable','value'])['y'].agg([n0, n1])\
+          dtm_sv.fillna('missing').groupby(['variable','value'], group_keys=False)['y'].agg([n0, n1])\
           .reset_index().rename(columns={'n0':'good','n1':'bad'}),
           sv_df.fillna('missing'), 
           on='value'
-        ).groupby(['variable', 'rowid', 'bin_chr']).agg({'bad':sum,'good':sum})\
+        ).groupby(['variable', 'rowid', 'bin_chr'], group_keys=False).agg({'bad':sum,'good':sum})\
         .reset_index().rename(columns={'bin_chr':'bin'})\
         .drop('rowid', axis=1)
     else:
@@ -145,7 +159,7 @@ def check_empty_bins(dtm, binning):
         bstbrks = sorted(list(map(float, ['-inf'] + list(binright) + ['inf'])))
         labels = ['[{},{})'.format(bstbrks[i], bstbrks[i+1]) for i in range(len(bstbrks)-1)]
         dtm.loc[:,'bin'] = pd.cut(dtm['value'], bstbrks, right=False, labels=labels)
-        binning = dtm.groupby(['variable','bin'])['y'].agg([n0, n1])\
+        binning = dtm.groupby(['variable','bin'], group_keys=False)['y'].agg([n0, n1])\
           .reset_index().rename(columns={'n0':'good','n1':'bad'})
         # warnings.warn("The break points are modified into '[{}]'. There are empty bins based on the provided break points.".format(','.join(binright)))
         # binning
@@ -189,7 +203,7 @@ def woebin2_breaks(dtm, breaks, spl_val):
         dtm.loc[:,'bin'] = pd.cut(dtm['value'], bstbrks, right=False, labels=labels)
         dtm['bin'] = dtm['bin'].astype(str)
         
-        binning = dtm.groupby(['variable','bin'])['y'].agg([n0, n1])\
+        binning = dtm.groupby(['variable','bin'], group_keys=False)['y'].agg([n0, n1])\
           .reset_index().rename(columns={'n0':'good','n1':'bad'})
         # check empty bins for unmeric variable
         binning = check_empty_bins(dtm, binning)
@@ -212,49 +226,15 @@ def woebin2_breaks(dtm, breaks, spl_val):
           dtm, 
           bk_df.assign(bin=lambda x: x.bin_chr),
           how='left', on='value'
-        ).fillna('missing').groupby(['variable', 'rowid', 'bin'])['y'].agg([n0,n1])\
+        ).fillna('missing').groupby(['variable', 'rowid', 'bin'], group_keys=False)['y'].agg([n0,n1])\
         .rename(columns={'n0':'good','n1':'bad'})\
         .reset_index().drop('rowid', axis=1)
     # return
     return {'binning_sv':binning_sv, 'binning':binning}
     
 
-# required in woebin2_init_bin # return pretty breakpoints
-def pretty(low, high, n):
-    '''
-    pretty breakpoints, the same as pretty function in R
-    
-    Params
-    ------
-    low: minimal value 
-    low: maximal value 
-    n: number of intervals
-    
-    Returns
-    ------
-    numpy.ndarray
-        returns a breakpoints array
-    '''
-    # nicenumber
-    def nicenumber(x):
-        exp = np.trunc(np.log10(abs(x)))
-        f   = abs(x) / 10**exp
-        if f < 1.5:
-            nf = 1.
-        elif f < 3.:
-            nf = 2.
-        elif f < 7.:
-            nf = 5.
-        else:
-            nf = 10.
-        return np.sign(x) * nf * 10.**exp
-    # pretty breakpoints
-    d     = abs(nicenumber((high-low)/(n-1)))
-    miny  = np.floor(low  / d) * d
-    maxy  = np.ceil (high / d) * d
-    return np.arange(miny, maxy+0.5*d, d)
 # required in woebin2 # return initial binning
-def woebin2_init_bin(dtm, init_count_distr, breaks, spl_val):
+def woebin2_init_bin(dtm, init_count_distr, breaks, spl_val, bin_decimals):
     '''
     initial binning
     
@@ -279,14 +259,14 @@ def woebin2_init_bin(dtm, init_count_distr, breaks, spl_val):
     if dtm is None: return {'binning_sv':binning_sv, 'initial_binning':None}
     # binning
     if is_numeric_dtype(dtm['value']): # numeric variable
-        xvalue = dtm['value'].astype(float)
+        xvalue = dtm['value'].astype(float).round(decimals=bin_decimals)
         # number of initial binning
-        n = int(np.trunc(1/init_count_distr))
+        n = int(np.trunc(len(dtm.index)/init_count_distr))
         len_uniq_x = len(np.unique(xvalue))
         if len_uniq_x < n: n = len_uniq_x
         # initial breaks
-        ser, brk = pd.qcut(dtm['value'], q=n, retbins=True, duplicates='drop')
-        brk = brk.round(decimals=2)
+        ser, brk = pd.qcut(xvalue, q=n, retbins=True, duplicates='drop')
+        brk = brk.round(decimals=bin_decimals)
         
         brk = list(filter(lambda x: x>np.nanmin(xvalue) and x<=np.nanmax(xvalue), brk))
         brk = [float('-inf')] + sorted(brk) + [float('inf')]
@@ -295,7 +275,7 @@ def woebin2_init_bin(dtm, init_count_distr, breaks, spl_val):
         labels = ['[{},{})'.format(brk[i], brk[i+1]) for i in range(len(brk)-1)]
         dtm.loc[:,'bin'] = pd.cut(dtm['value'], brk, right=False, labels=labels)#.astype(str)
         # init_bin
-        init_bin = dtm.groupby('bin')['y'].agg([n0, n1])\
+        init_bin = dtm.groupby('bin', group_keys=False)['y'].agg([n0, n1])\
         .reset_index().rename(columns={'n0':'good','n1':'bad'})
         # check empty bins for unmeric variable
         init_bin = check_empty_bins(dtm, init_bin)
@@ -307,7 +287,7 @@ def woebin2_init_bin(dtm, init_count_distr, breaks, spl_val):
         )[['variable', 'bin', 'brkp', 'good', 'bad', 'badprob']]
     else: # other type variable
         # initial binning datatable
-        init_bin = dtm.groupby('value')['y'].agg([n0,n1])\
+        init_bin = dtm.groupby('value', group_keys=False)['y'].agg([n0,n1])\
         .rename(columns={'n0':'good','n1':'bad'})\
         .assign(
           variable = dtm['variable'].values[0],
@@ -336,7 +316,8 @@ def woebin2_init_bin(dtm, init_count_distr, breaks, spl_val):
         init_bin = init_bin.assign(brkp2  = lambda x: x['brkp'].shift(shift_period))\
         .assign(brkp = lambda x:np.where(x['brkp'] == rm_brkp['brkp'], x['brkp2'], x['brkp']))
         # groupby brkp
-        init_bin = init_bin.groupby(['brkp','variable']).agg({
+        init_bin = init_bin.groupby('brkp', group_keys=False).agg({
+          'variable':lambda x: np.unique(x)[0],
           'bin': lambda x: '%,%'.join(x),
           'good': sum,
           'bad': sum
@@ -387,18 +368,18 @@ def woebin2_tree_add_1brkp(dtm, initial_binning, count_distr_limit, bestbreaks=N
         total_iv_all_brks = pd.melt(
           init_bin_all_breaks, id_vars=["variable", "good", "bad"], var_name='bstbin', 
           value_vars=['bstbin'+str(i) for i in breaks_set])\
-          .groupby(['variable', 'bstbin', 'value'])\
+          .groupby(['variable', 'bstbin', 'value'], group_keys=False)\
           .agg({'good':sum, 'bad':sum}).reset_index()\
           .assign(count=lambda x: x['good']+x['bad'])
           
-        total_iv_all_brks['count_distr'] = total_iv_all_brks.groupby(['variable', 'bstbin'])\
+        total_iv_all_brks['count_distr'] = total_iv_all_brks.groupby(['variable', 'bstbin'], group_keys=False)\
           ['count'].apply(lambda x: x/dtm_rows).reset_index(drop=True)
-        total_iv_all_brks['min_count_distr'] = total_iv_all_brks.groupby(['variable', 'bstbin'])\
+        total_iv_all_brks['min_count_distr'] = total_iv_all_brks.groupby(['variable', 'bstbin'], group_keys=False)\
           ['count_distr'].transform(lambda x: min(x))
           
         total_iv_all_brks = total_iv_all_brks\
           .assign(bstbin = lambda x: [float(re.sub('^bstbin', '', i)) for i in x['bstbin']] )\
-          .groupby(['variable','bstbin','min_count_distr'])\
+          .groupby(['variable','bstbin','min_count_distr'], group_keys=False)\
           .apply(lambda x: iv_01(x['good'], x['bad'])).reset_index(name='total_iv')
         # return 
         return total_iv_all_brks
@@ -416,11 +397,11 @@ def woebin2_tree_add_1brkp(dtm, initial_binning, count_distr_limit, bestbreaks=N
           bstbin = lambda x: pd.cut(x['brkp'], bestbreaks_inf, right=False, labels=labels)
         )
         if is_numeric_dtype(dtm['value']):
-            binning_1bst_brk = binning_1bst_brk.groupby(['variable', 'bstbin'])\
+            binning_1bst_brk = binning_1bst_brk.groupby(['variable', 'bstbin'], group_keys=False)\
             .agg({'good':sum, 'bad':sum}).reset_index().assign(bin=lambda x: x['bstbin'])\
             [['bstbin', 'variable', 'bin', 'good', 'bad']]
         else:
-            binning_1bst_brk = binning_1bst_brk.groupby(['variable', 'bstbin'])\
+            binning_1bst_brk = binning_1bst_brk.groupby(['variable', 'bstbin'], group_keys=False)\
             .agg({'good':sum, 'bad':sum, 'bin':lambda x:'%,%'.join(x)}).reset_index()\
             [['bstbin', 'variable', 'bin', 'good', 'bad']]
         # format
@@ -450,7 +431,7 @@ def woebin2_tree_add_1brkp(dtm, initial_binning, count_distr_limit, bestbreaks=N
     
     
 # required in woebin2 # return tree-like binning
-def woebin2_tree(dtm, init_count_distr=0.02, count_distr_limit=0.05, 
+def woebin2_tree(dtm, init_count_distr, count_distr_limit=0.05, bin_decimals=4,
                  stop_limit=0.1, bin_num_limit=8, breaks=None, spl_val=None):
     '''
     binning using tree-like method
@@ -471,11 +452,13 @@ def woebin2_tree(dtm, init_count_distr=0.02, count_distr_limit=0.05,
         returns a dict with initial binning and special_value binning
     '''
     # initial binning
-    bin_list = woebin2_init_bin(dtm, init_count_distr=init_count_distr, breaks=breaks, spl_val=spl_val)
+    bin_list = woebin2_init_bin(dtm, init_count_distr=init_count_distr, breaks=breaks, spl_val=spl_val, bin_decimals=bin_decimals)
     initial_binning = bin_list['initial_binning']
     binning_sv = bin_list['binning_sv']
-    if len(initial_binning.index)==1: 
-        return {'binning_sv':binning_sv, 'binning':initial_binning}
+    if initial_binning is None:  # fix next condition npe
+        return {'binning_sv': binning_sv, 'binning': None}, initial_binning
+    if len(initial_binning.index) == 1:
+        return {'binning_sv': binning_sv, 'binning': initial_binning}, initial_binning
     # initialize parameters
     len_brks = len(initial_binning.index)
     bestbreaks = None
@@ -514,7 +497,7 @@ def woebin2_tree(dtm, init_count_distr=0.02, count_distr_limit=0.05,
 
 # required in woebin2 # return chimerge binning
 #' @importFrom stats qchisq
-def woebin2_chimerge(dtm, init_count_distr=0.02, count_distr_limit=0.05, 
+def woebin2_chimerge(dtm, init_count_distr, count_distr_limit=0.05, bin_decimals=4,
                      stop_limit=0.1, bin_num_limit=8, breaks=None, spl_val=None):
     '''
     binning using chimerge method
@@ -554,13 +537,13 @@ def woebin2_chimerge(dtm, init_count_distr=0.02, count_distr_limit=0.05,
           var_name='goodbad', value_name='a')\
         .sort_values(by=['goodbad', 'brkp']).reset_index(drop=True)
         ###
-        chisq_df['a_lag'] = chisq_df.groupby('goodbad')['a'].apply(lambda x: x.shift(1))#.reset_index(drop=True)
-        chisq_df['a_rowsum'] = chisq_df.groupby('brkp')['a'].transform(lambda x: sum(x))#.reset_index(drop=True)
-        chisq_df['a_lag_rowsum'] = chisq_df.groupby('brkp')['a_lag'].transform(lambda x: sum(x))#.reset_index(drop=True)
+        chisq_df['a_lag'] = chisq_df.groupby('goodbad', group_keys=False)['a'].apply(lambda x: x.shift(1))#.reset_index(drop=True)
+        chisq_df['a_rowsum'] = chisq_df.groupby('brkp', group_keys=False)['a'].transform(lambda x: sum(x))#.reset_index(drop=True)
+        chisq_df['a_lag_rowsum'] = chisq_df.groupby('brkp', group_keys=False)['a_lag'].transform(lambda x: sum(x))#.reset_index(drop=True)
         ###
         chisq_df = pd.merge(
           chisq_df.assign(a_colsum = lambda df: df.a+df.a_lag), 
-          chisq_df.groupby('brkp').apply(lambda df: sum(df.a+df.a_lag)).reset_index(name='a_sum'))\
+          chisq_df.groupby('brkp', group_keys=False).apply(lambda df: sum(df.a+df.a_lag)).reset_index(name='a_sum'))\
         .assign(
           e = lambda df: df.a_rowsum*df.a_colsum/df.a_sum,
           e_lag = lambda df: df.a_lag_rowsum*df.a_colsum/df.a_sum
@@ -570,12 +553,12 @@ def woebin2_chimerge(dtm, init_count_distr=0.02, count_distr_limit=0.05,
         # return
         return pd.merge(initial_binning.assign(count = lambda x: x['good']+x['bad']), chisq_df, how='left')
     # initial binning
-    bin_list = woebin2_init_bin(dtm, init_count_distr=init_count_distr, breaks=breaks, spl_val=spl_val)
+    bin_list = woebin2_init_bin(dtm, init_count_distr=init_count_distr, breaks=breaks, spl_val=spl_val, bin_decimals=bin_decimals)
     initial_binning = bin_list['initial_binning']
     binning_sv = bin_list['binning_sv']
     # return initial binning if its row number equals 1
-    if len(initial_binning.index)==1: 
-        return {'binning_sv':binning_sv, 'binning':initial_binning}
+    if len(initial_binning.index) == 1:
+        return {'binning_sv': binning_sv, 'binning': initial_binning}, initial_binning
 
     # dtm_rows
     dtm_rows = len(dtm.index)    
@@ -612,7 +595,7 @@ def woebin2_chimerge(dtm, init_count_distr=0.02, count_distr_limit=0.05,
         binning_chisq = binning_chisq.assign(brkp2  = lambda x: x['brkp'].shift(shift_period))\
         .assign(brkp = lambda x:np.where(x['brkp'] == rm_brkp['brkp'], x['brkp2'], x['brkp']))
         # groupby brkp
-        binning_chisq = binning_chisq.groupby('brkp').agg({
+        binning_chisq = binning_chisq.groupby('brkp', group_keys=False).agg({
           'variable':lambda x:np.unique(x),
           'bin': lambda x: '%,%'.join(x),
           'good': sum,
@@ -636,7 +619,6 @@ def woebin2_chimerge(dtm, init_count_distr=0.02, count_distr_limit=0.05,
         .assign(brkp = lambda x: [float(re.match('^\[(.*),.+', i).group(1)) for i in x['bin']])
     # return 
     return {'binning_sv':binning_sv, 'binning':binning_chisq}, initial_binning
-
      
      
 
@@ -677,7 +659,7 @@ def binning_format(binning):
             breaks_string = x if gp23 is None else gp23.group(2)+gp23.group(3)
             return breaks_string
         binning['breaks'] = [re_extract_all(i) for i in binning['bin']]
-        def re_extract_all0(x): 
+        def re_extract_all0(x):
             gp1 = re.match(r"^\[(.*), *(.*)\)((%,%missing)*)", x)
             breaks_string = x if gp1 is None else gp1.group(1)
             return breaks_string
@@ -690,8 +672,8 @@ def binning_format(binning):
 
 # woebin2
 # This function provides woe binning for only two columns (one x and one y) dataframe.
-def woebin2(dtm, breaks=None, spl_val=None, 
-            init_count_distr=0.02, count_distr_limit=0.05, 
+def woebin2(dtm, init_count_distr, breaks=None, spl_val=None,
+            count_distr_limit=0.05, bin_decimals=4,
             stop_limit=0.1, bin_num_limit=8, method="tree"):
     '''
     provides woe binning for only two series
@@ -713,35 +695,34 @@ def woebin2(dtm, breaks=None, spl_val=None,
     else:
         if stop_limit == 'N':
             # binning of initial & specialvalues
-            bin_list = woebin2_init_bin(dtm, init_count_distr=init_count_distr, breaks=breaks, spl_val=spl_val)
+            bin_list = woebin2_init_bin(dtm, init_count_distr=init_count_distr, breaks=breaks, spl_val=spl_val, bin_decimals=bin_decimals)
             initial_binning = bin_list
         else:
             if method == 'tree':
                 # 2.tree-like optimal binning
                 bin_list, initial_binning = woebin2_tree(
                   dtm, init_count_distr=init_count_distr, count_distr_limit=count_distr_limit, 
-                  stop_limit=stop_limit, bin_num_limit=bin_num_limit, breaks=breaks, spl_val=spl_val)
+                  stop_limit=stop_limit, bin_num_limit=bin_num_limit, breaks=breaks, spl_val=spl_val, bin_decimals=bin_decimals)
             elif method == "chimerge":
                 # 2.chimerge optimal binning
                 bin_list, initial_binning = woebin2_chimerge(
                   dtm, init_count_distr=init_count_distr, count_distr_limit=count_distr_limit, 
-                  stop_limit=stop_limit, bin_num_limit=bin_num_limit, breaks=breaks, spl_val=spl_val)
+                  stop_limit=stop_limit, bin_num_limit=bin_num_limit, breaks=breaks, spl_val=spl_val, bin_decimals=bin_decimals)
     # rbind binning_sv and binning
     binning = pd.concat(bin_list, keys=bin_list.keys()).reset_index()\
               .assign(is_sv = lambda x: x.level_0 =='binning_sv')
-    # print(binning)
+    initial_binning = pd.concat([initial_binning.assign(is_sv=False), binning[binning['is_sv']==True].assign(is_sv=True)])
     # return
-    return initial_binning, binning_format(binning)
+    return binning_format(initial_binning), binning_format(binning)
 
 
 def bins_to_breaks(bins, dt, to_string=False, save_string=None):
     if isinstance(bins, tuple):
-        bins = bins[0]
+        bins = bins[1]
     if isinstance(bins, dict):
         bins = pd.concat(bins, ignore_index=True)
 
     # x variables
-    #print(bins[]['variable'])
     xs_all = bins['variable'].unique()
     # dtypes of  variables
     vars_class = pd.DataFrame({
@@ -753,27 +734,30 @@ def bins_to_breaks(bins, dt, to_string=False, save_string=None):
     bins_breakslist = bins[~bins['breaks'].isin(["-inf","inf","missing"]) & ~bins['is_special_values']]
     bins_breakslist = pd.merge(bins_breakslist[['variable', 'breaks']], vars_class, how='left', on='variable')
     bins_breakslist.loc[bins_breakslist['not_numeric'], 'breaks'] = '\''+bins_breakslist.loc[bins_breakslist['not_numeric'], 'breaks']+'\''
-    bins_breakslist = bins_breakslist.groupby('variable')['breaks'].agg(lambda x: ','.join(x))
+    bins_breakslist = bins_breakslist.groupby('variable', group_keys=False)['breaks'].agg(lambda x: ','.join(x))
+
+    for i in xs_all:
+        if i not in bins_breakslist.index:
+            bins_breakslist = pd.concat([bins_breakslist, pd.Series(['inf'], index=[i])])
     
     if to_string:
-        bins_breakslist = "breaks_list={\n"+', \n'.join('\''+bins_breakslist.index[i]+'\': ['+bins_breakslist[i]+']' for i in np.arange(len(bins_breakslist)))+"}"
+        bins_breakslist = "{"+', \n'.join('\''+bins_breakslist.index[i]+'\': ['+bins_breakslist[i]+']' for i in np.arange(len(bins_breakslist)))+"}"
         if save_string is not None:
             brk_lst_name = save_string
-            with open(brk_lst_name, 'w', encoding='utf-8') as f:
+            with open(brk_lst_name, 'w') as f:
                 f.write(bins_breakslist)
             print('[INFO] The breaks_list is saved as {}'.format(brk_lst_name))
             return 
     return bins_breakslist
 
-    
 
 def woebin(dt, y, x=None, 
            var_skip=None, breaks_list=None, special_values=None, 
            stop_limit=0.1, count_distr_limit=0.05, bin_num_limit=8, 
-           # min_perc_fine_bin=0.02, min_perc_coarse_bin=0.05, max_num_bin=8, 
+           min_perc_fine_bin=0.02, bin_decimals=4, #min_perc_coarse_bin=0.05, max_num_bin=8,
            positive="bad|1", no_cores=None, print_step=0, method="tree",
            ignore_const_cols=True, ignore_datetime_cols=True, 
-           check_cate_num=True, replace_blank=True, 
+           check_cate_num=True, replace_blank=True,
            save_breaks_list=None, **kwargs):
     '''
     WOE Binning
@@ -783,8 +767,8 @@ def woebin(dt, y, x=None,
     merge. woebin can also customizing breakpoints if the breaks_list or 
     special_values was provided.
     
-    The default woe is defined as ln(Distr_Bad_i/Distr_Good_i). If you 
-    prefer ln(Distr_Good_i/Distr_Bad_i), please set the argument `positive` 
+    The default woe is defined as ln(Distr_Good_i/Distr_Bad_i). If you
+    prefer ln(Distr_Bad_i/Distr_Good_i), please set the argument `positive`
     as negative value, such as '0' or 'good'. If there is a zero frequency 
     class when calculating woe, the zero will replaced by 0.99 to make the 
     woe calculable.
@@ -844,7 +828,7 @@ def woebin(dt, y, x=None,
     # Example I
     # binning of two variables in germancredit dataset
     bins_2var = sc.woebin(dat, y = "creditability", 
-      x = ["credit.amount", "purpose"])
+      x = ["credit_amount", "purpose"])
     
     # Example II
     # binning of the germancredit dataset
@@ -856,16 +840,16 @@ def woebin(dt, y, x=None,
     dat_nan = pd.concat([dat, dat2], ignore_index=True)
     
     breaks_list = {
-      'age.in.years': [26, 35, 37, "Inf%,%missing"],
+      'age_in_years': [26, 35, 37, "Inf%,%missing"],
       'housing': ["own", "for free%,%rent"]
     }
     special_values = {
-      'credit.amount': [2600, 9960, "6850%,%missing"],
+      'credit_amount': [2600, 9960, "6850%,%missing"],
       'purpose': ["education", "others%,%missing"]
     }
     
     bins_cus_brk = sc.woebin(dat_nan, y="creditability",
-      x=["age.in.years","credit.amount","housing","purpose"],
+      x=["age_in_years","credit_amount","housing","purpose"],
       breaks_list=breaks_list, special_values=special_values)
     '''
     # start time
@@ -874,10 +858,6 @@ def woebin(dt, y, x=None,
     # arguments
     ## print_info
     print_info = kwargs.get('print_info', True)
-    ## init_count_distr
-    min_perc_fine_bin = kwargs.get('min_perc_fine_bin', None)
-    init_count_distr = kwargs.get('init_count_distr', min_perc_fine_bin)
-    if init_count_distr is None: init_count_distr = 0.02
     ## count_distr_limit
     min_perc_coarse_bin = kwargs.get('min_perc_coarse_bin', None)
     if min_perc_coarse_bin is not None: count_distr_limit = min_perc_coarse_bin
@@ -908,23 +888,21 @@ def woebin(dt, y, x=None,
       
     # x variable names
     xs = x_variable(dt, y, x, var_skip)
-    # print(x)
-    xs_len = len(xs)
     # print_step
     print_step = check_print_step(print_step)
     # breaks_list
     breaks_list = check_breaks_list(breaks_list, xs)
     # special_values
-    special_values = check_special_values(special_values, xs)
+    special_values = check_special_values(dt, special_values, xs)
     ### ### 
     # stop_limit range
     if stop_limit<0 or stop_limit>0.5 or not isinstance(stop_limit, (float, int)):
         warnings.warn("Incorrect parameter specification; accepted stop_limit parameter range is 0-0.5. Parameter was set to default (0.1).")
         stop_limit = 0.1
-    # init_count_distr range
-    if init_count_distr<0.01 or init_count_distr>0.2 or not isinstance(init_count_distr, (float, int)):
-        warnings.warn("Incorrect parameter specification; accepted init_count_distr parameter range is 0.01-0.2. Parameter was set to default (0.02).")
-        init_count_distr = 0.02
+    # min_perc_fine_bin range
+    if min_perc_fine_bin<0.01 or min_perc_fine_bin>0.2 or not isinstance(min_perc_fine_bin, (float, int)):
+        warnings.warn("Incorrect parameter specification; accepted min_perc_fine_bin parameter range is 0.01-0.2. Parameter was set to default (0.02).")
+        min_perc_fine_bin = 0.02
     # count_distr_limit
     if count_distr_limit<0.01 or count_distr_limit>0.2 or not isinstance(count_distr_limit, (float, int)):
         warnings.warn("Incorrect parameter specification; accepted count_distr_limit parameter range is 0.01-0.2. Parameter was set to default (0.05).")
@@ -937,8 +915,13 @@ def woebin(dt, y, x=None,
     if method not in ["tree", "chimerge"]:
         warnings.warn("Incorrect inputs; method should be tree or chimerge. Parameter was set to default (tree).")
         method = "tree"
-    ### ### 
+    ### ###
+    # check if bins can be created
+    var_one_bin = check_max_bin_num(dt, xs, min_perc_fine_bin, bin_decimals)
+    xs = list(set(xs) - set(var_one_bin))
+    xs_len = len(xs)
     # binning for each x variable
+    init_count_distr = len(dt.index)*min_perc_fine_bin
     # loop on xs
     if (no_cores is None) or (no_cores < 1):
         all_cores = mp.cpu_count() - 1
@@ -949,33 +932,47 @@ def woebin(dt, y, x=None,
     # ylist to str
     y = y[0]
     # binning for variables
-    # create empty bins dict
-    bins = {}
-    init_bins = {}
-    #print(xs)
+    if no_cores == 1:
+        # create empty bins dict
+        bins = {}
+        init_bins = {}
+        for i in np.arange(xs_len):
+            x_i = xs[i]
+            # print(x_i)
+            # print xs
+            if print_step>0 and not bool((i+1)%print_step):
+                print(('{:'+str(len(str(xs_len)))+'.0f}/{} {}').format(i+1, xs_len, x_i), flush=True)
+            # woebining on one variable
+            init_bins[x_i], bins[x_i] = woebin2(
+              dtm = pd.DataFrame({'y':dt[y], 'variable':x_i, 'value':dt[x_i]}),
+              breaks=breaks_list[x_i] if (breaks_list is not None) and (x_i in breaks_list.keys()) else None,
+              spl_val=special_values[x_i] if (special_values is not None) and (x_i in special_values.keys()) else None,
+              init_count_distr=init_count_distr,
+              count_distr_limit=count_distr_limit,
+              stop_limit=stop_limit, 
+              bin_num_limit=bin_num_limit,
+              method=method,
+              bin_decimals=bin_decimals
+            )
+            # try catch:
+            # "The variable '{}' caused the error: '{}'".format(x_i, error-info)
+    else:
+        pool = mp.Pool(processes=no_cores)
+        # arguments
+        args = zip(
+          [pd.DataFrame({'y':dt[y], 'variable':x_i, 'value':dt[x_i]}) for x_i in xs], 
+          [breaks_list[i] if (breaks_list is not None) and (i in list(breaks_list.keys())) else None for i in xs],
+          [special_values[i] if (special_values is not None) and (i in list(special_values.keys())) else None for i in xs],
+          [init_count_distr]*xs_len, [count_distr_limit]*xs_len, 
+          [stop_limit]*xs_len, [bin_num_limit]*xs_len, [method]*xs_len, [bin_decimals]*xs_len
+        )
+        # bins in dictionary
+        init_bins, bins = dict(zip(xs, pool.starmap(woebin2, args)))
+        pool.close()
     for i in np.arange(xs_len):
         x_i = xs[i]
-        # print(x_i)
-        # print xs
-        if print_step>0 and bool((i+1)%print_step): 
-            print(('{:'+str(len(str(xs_len)))+'.0f}/{} {}').format(i, xs_len, x_i), flush=True)
-        # woebining on one variable
-        init_bins[x_i], bins[x_i] = woebin2(
-          dtm = pd.DataFrame({'y':dt[y], 'variable':x_i, 'value':dt[x_i]}),
-          breaks=breaks_list[x_i] if (breaks_list is not None) and (x_i in breaks_list.keys()) else None,
-          spl_val=special_values[x_i] if (special_values is not None) and (x_i in special_values.keys()) else None,
-          init_count_distr=init_count_distr,
-          count_distr_limit=count_distr_limit,
-          stop_limit=stop_limit, 
-          bin_num_limit=bin_num_limit,
-          method=method
-        )
-        init_bins[x_i]['woe'] = woe_01(init_bins[x_i]['good'],init_bins[x_i]['bad'])
-        
-        # try catch:
-        # "The variable '{}' caused the error: '{}'".format(x_i, error-info)
+        init_bins[x_i]['woe'] = woe_01(init_bins[x_i]['good'], init_bins[x_i]['bad'])
 
-    
     # runingtime
     runingtime = time.time() - start_time
     if runingtime >= 10 and print_info:
@@ -983,9 +980,7 @@ def woebin(dt, y, x=None,
         print('Binning on {} rows and {} columns in {}'.format(dt.shape[0], dt.shape[1], time.strftime("%H:%M:%S", time.gmtime(runingtime))))
     if save_breaks_list is not None:
         bins_to_breaks(bins, dt, to_string=True, save_string=save_breaks_list)
-        #bins_to_breaks(init_bins, dt, to_string=True, save_string=save_breaks_list)
     # return
-    
     return init_bins, bins
 
 
@@ -1026,7 +1021,14 @@ def woepoints_ply1(dtx, binx, x_i, woe_points):
         # dtx.loc[:,'xi_bin'] = pd.cut(dtx[x_i], breaks_binx_other, right=False, labels=labels)
         # dtx.loc[:,'xi_bin'] = np.where(pd.isnull(dtx['xi_bin']), dtx['xi_bin'], dtx['xi_bin'].astype(str))
         #
-        mask = dtx[x_i].isin(binx_sv['V1'])
+        # mask = dtx[x_i].isin(binx_sv['V1'])
+        try:
+            # when binx_sv['V1'] is not int then cast type
+            mask = dtx[x_i].astype('Int64').isin(binx_sv.loc[~binx_sv['V1'].str.isalpha()]['V1'].astype('float').astype('Int64'))
+        except:
+            # if can not cast then use as is
+            mask = dtx[x_i].isin(binx_sv['V1'])
+
         dtx.loc[mask,'xi_bin'] = dtx.loc[mask, x_i].astype(str)
         dtx = dtx[['xi_bin']].rename(columns={'xi_bin':x_i})
     ## to charcarter, na to missing
@@ -1116,6 +1118,7 @@ def woebin_ply(dt, bins, no_cores=None, print_step=0, replace_blank=True, **kwar
     xs_bin = bins['variable'].unique()
     xs_dt = list(dt.columns)
     xs = list(set(xs_bin).intersection(xs_dt))
+    # print(xs)
     # length of x variables
     xs_len = len(xs)
     # initial data set
@@ -1277,20 +1280,20 @@ def woebin_plot(bins, x=None, title=None, show_iv=True):
         binx['good_distr'] = binx['good']/sum(binx['count'])
         binx['bad_distr'] = binx['bad']/sum(binx['count'])
         return binx
-    bins = bins.groupby('variable').apply(gb_distr)
+    bins = bins.groupby('variable', group_keys=False).apply(gb_distr)
     # x variable names
     if xs is None: xs = bins['variable'].unique()
     # plot export
     plotlist = {}
     for i in xs:
-        binx = bins[bins['variable'] == i].reset_index()
+        binx = bins[bins['variable'] == i].reset_index(drop=True)
         plotlist[i] = plot_bin(binx, title, show_iv)
-    return plotlist
+    return plotlist 
 
 
 
 # print basic information in woebin_adj
-def woebin_adj_print_basic_info(i, xs, bins, dt, bins_breakslist, fine_bins):
+def woebin_adj_print_basic_info(i, xs, bins, dt, bins_breakslist, init_bins, show_init_bins=False):
     '''
     print basic information of woebinnig in adjusting process
     
@@ -1307,32 +1310,30 @@ def woebin_adj_print_basic_info(i, xs, bins, dt, bins_breakslist, fine_bins):
     print("--------", str(i)+"/"+str(xs_len), x_i, "--------")
     # print(">>> dt["+x_i+"].dtypes: ")
     # print(str(dt[x_i].dtypes), '\n')
-    # 
+    #
     '''
     print(">>> dt["+x_i+"].describe(): ")
-    display(dt[x_i].describe(), '\n')
+    print(dt[x_i].describe(), '\n')
     
     if len(dt[x_i].unique()) < 10 or not is_numeric_dtype(dt[x_i]):
         print(">>> dt["+x_i+"].value_counts(): ")
-        display(dt[x_i].value_counts(), '\n')
+        print(dt[x_i].value_counts(), '\n')
     else:
         dt[x_i].hist()
         plt.title(x_i)
         plt.show()
     '''
-    display(fine_bins[x_i])
-        
+    if show_init_bins: display(init_bins[x_i])
+
     ## current breaks
     print(">>> Current breaks:")
     print(bins_breakslist[x_i], '\n')
     ## woebin plotting
     plt.show(woebin_plot(binx)[x_i])
     
-
-    
     
 # plot adjusted binning in woebin_adj
-def woebin_adj_break_plot(dt, y, x_i, breaks, stop_limit, sv_i, method):
+def woebin_adj_break_plot(dt, y, x_i, breaks, sv_i):
     '''
     update breaks and provies a binning plot
     
@@ -1348,7 +1349,7 @@ def woebin_adj_break_plot(dt, y, x_i, breaks, stop_limit, sv_i, method):
     breaks_list = None if breaks is None else {x_i: eval('['+breaks+']')}
     special_values = None if sv_i is None else {x_i: sv_i}
     # binx update
-    fine, bins_adj = woebin(dt[[x_i,y]], y, breaks_list=breaks_list, special_values=special_values, stop_limit = stop_limit, method=method)
+    _, bins_adj = woebin(dt[[x_i,y]], y, breaks_list=breaks_list, special_values=special_values)
     
     ## print adjust breaks
     breaks_bin = set(bins_adj[x_i]['breaks']) - set(["-inf","inf","missing"])
@@ -1362,7 +1363,8 @@ def woebin_adj_break_plot(dt, y, x_i, breaks, stop_limit, sv_i, method):
     return breaks
     
     
-def woebin_adj(dt, y, bins, fine_bins, adj_all_var=False, special_values=None, method="tree", save_breaks_list=None, count_distr_limit=0.05):
+def woebin_adj(dt, y, x=None, bins=None, init_bins=None, adj_all_var=False, special_values=None,
+               load_breaks_list=None, save_breaks_list=None, show_init_bins=False):
     '''
     WOE Binning Adjustment
     ------
@@ -1409,25 +1411,46 @@ def woebin_adj(dt, y, bins, fine_bins, adj_all_var=False, special_values=None, m
     breaks_adjII = sc.woebin_adj(dat, "creditability", binsII)
     bins_finalII = sc.woebin(dat, y="creditability", breaks_list=breaks_adjII)
     '''
-    # bins concat 
-    if isinstance(bins, dict):
+    # bins concat
+    if load_breaks_list is not None:
+        if exists(load_breaks_list):
+            breaks_list = eval(open(load_breaks_list).read())
+            _, bins = woebin(dt, y, x=list(breaks_list.keys()), breaks_list=breaks_list, special_values=special_values)
+            bins = pd.concat(bins, ignore_index=True)
+        else:
+            warnings.warn("Incorrect inputs; there is no file named \'{}\'. Please check load_breaks_list parameter."
+                          .format(load_breaks_list), stacklevel=2)
+            if not isinstance(bins, dict):
+                raise Exception("Incorrect inputs; bins should be a dict; or you can provide load_breaks_list")
+            else:
+                bins = pd.concat(bins, ignore_index=True)
+    elif not isinstance(bins, dict):
+        raise Exception("Incorrect inputs; bins should be a dict; or you can provide load_breaks_list")
+    else:
         bins = pd.concat(bins, ignore_index=True)
+
+
     # x variables
-    xs_all = bins['variable'].unique()
+    if x is None:
+        xs_all = bins['variable'].unique()
+    else:
+        xs_all = x
     # adjust all variables
     if not adj_all_var:
-        bins2 = bins.loc[~((bins['bin'] == 'missing') & (bins['count_distr'] >= count_distr_limit))].reset_index(drop=True)
-        bins2['badprob2'] = bins2.groupby('variable').apply(lambda x: x['badprob'].shift(1)).reset_index(drop=True)
+        bins2 = bins[(bins['is_special_values'] == False)
+                     & (bins['variable'].isin(xs_all))
+                     & ((bins['breaks'].str.replace(".", "").str.isnumeric()) | (bins['breaks'] == 'inf'))]
+        bins2['badprob2'] = bins2.groupby('variable')['badprob'].shift()
         bins2 = bins2.dropna(subset=['badprob2']).reset_index(drop=True)
         bins2 = bins2.assign(badprob_trend = lambda x: x.badprob >= x.badprob2)
-        xs_adj = bins2.groupby('variable')['badprob_trend'].nunique()
+        xs_adj = bins2.groupby('variable', group_keys=False)['badprob_trend'].nunique()
         xs_adj = xs_adj[xs_adj>1].index
     else:
         xs_adj = xs_all
     # length of adjusting variables
     xs_len = len(xs_adj)
     # special_values
-    special_values = check_special_values(special_values, xs_adj)
+    special_values = check_special_values(dt, special_values, xs_adj)
     
     # breakslist of bins
     bins_breakslist = bins_to_breaks(bins,dt)
@@ -1439,13 +1462,17 @@ def woebin_adj(dt, y, bins, fine_bins, adj_all_var=False, special_values=None, m
     # else 
     def menu(i, xs_len, x_i):
         print('>>> Adjust breaks for ({}/{}) {}?'.format(i, xs_len, x_i))
-        print('1: next \n2: yes \n3: back')
+        print('0: finish \n1: next \n2: yes \n3: back')
         adj_brk = input("Selection: ")
-        adj_brk = int(adj_brk)
-        if adj_brk not in [0,1,2,3]:
-            warnings.warn('Enter an item from the menu, or 0 to exit.')
-            adj_brk = input("Selection: ")
-            adj_brk = int(adj_brk)
+        while isinstance(adj_brk,str):
+            if str(adj_brk).isdigit():
+                adj_brk = int(adj_brk)
+                if adj_brk not in [0,1,2,3]:
+                    warnings.warn('Enter an item from the menu, or 0 to exit.')               
+                    adj_brk = input("Selection: ")  
+            else: 
+                print('Input could not be converted to digit.')
+                adj_brk = input("Selection: ") #update by ZK 
         return adj_brk
         
     # init param
@@ -1459,22 +1486,19 @@ def woebin_adj(dt, y, bins, fine_bins, adj_all_var=False, special_values=None, m
         # if sv_i is not None:
         #     sv_i = ','.join('\'')
         # basic information of x_i variable ------
-        woebin_adj_print_basic_info(i, xs_adj, bins, dt, bins_breakslist, fine_bins)
+        woebin_adj_print_basic_info(i, xs_adj, bins, dt, bins_breakslist, init_bins, show_init_bins)
         # adjusting breaks ------
         adj_brk = menu(i, xs_len, x_i)
         if adj_brk == 0: 
-            return 
+            break
         while adj_brk == 2:
             # modify breaks adj_brk == 2
             breaks = input(">>> Enter modified breaks: ")
             breaks = re.sub("^[,\.]+|[,\.]+$", "", breaks)
             if breaks == 'N':
-                stop_limit = 'N'
                 breaks = None
-            else:
-                stop_limit = 0.1
             try:
-                breaks = woebin_adj_break_plot(dt, y, x_i, breaks, stop_limit, sv_i, method=method)
+                breaks = woebin_adj_break_plot(dt, y, x_i, breaks, sv_i)
             except:
                 pass
             # adj breaks again
@@ -1489,8 +1513,60 @@ def woebin_adj(dt, y, bins, fine_bins, adj_all_var=False, special_values=None, m
             i += 1
     # return 
     breaks_list = "{"+', '.join('\''+bins_breakslist.index[i]+'\': ['+bins_breakslist[i]+']' for i in np.arange(len(bins_breakslist)))+"}"
-    if save_breaks_list is not None:
+    if isinstance(save_breaks_list, str):
         _, bins_adj = woebin(dt, y, x=list(bins_breakslist.index.values), breaks_list=breaks_list)
         bins_to_breaks(bins_adj, dt, to_string=True, save_string=save_breaks_list)
+        breaks_list = breaks_list.replace("[inf]", "[np.inf]")
     return breaks_list
     
+
+# Creating summary table with binning results
+def vars_iv(bins):
+    var_list = []
+    iv = []
+    for i in bins:
+        iv.append(bins[i].iloc[0]['total_iv'])
+        var_list.append(i)
+    vars_iv = pd.DataFrame({
+      'variable': var_list,
+      'iv': iv
+    })
+    return vars_iv.sort_values('iv', ascending=False).reset_index(drop=True)
+
+
+def vars_filter(dt, bins, corr_threshold=0.7, iv_threshold=0.02, save_to='3_4_rejected_vars_fine_classing.xlsx'):
+    # IV for each variable
+    bins_iv = vars_iv(bins)
+    bins_iv = bins_iv.set_index(bins_iv['variable']+'_woe')
+
+    # filtering out by IV < threshold
+    var_list = []
+    for i in bins:
+        var_list = var_list + [i]
+    excl_iv = bins_iv[bins_iv['iv'] < iv_threshold]
+    var_excl_iv = bins_iv[bins_iv['iv'] < iv_threshold]['variable'].tolist()
+    var_list = list(set(var_list) - set(var_excl_iv))
+    bins_iv = bins_iv[bins_iv['variable'].isin(var_list)]
+
+    # correlation table for all woe variables
+    var_list_woe = [x+'_woe' for x in var_list]
+    dt_woe = woebin_ply(dt, bins=bins)
+    woe_corr = dt_woe[var_list_woe].corr()
+
+    # filtering out by correlation and IV
+    excl_corr = []
+    for i in bins_iv['variable']:
+        if i in var_list:
+            var_list_woe = [x+'_woe' for x in var_list]
+            woe_corr = woe_corr.loc[var_list_woe][var_list_woe]
+            var_excl_corr = list(woe_corr[(abs(woe_corr[i+'_woe']) > corr_threshold) & (woe_corr[i+'_woe'] < 1)].index.values)
+            var_list = [x for x in var_list if x+'_woe' not in var_excl_corr]
+            excl_corr_i = bins_iv.loc[var_excl_corr] #excl_corr[i]
+            excl_corr_i['corr_var'] = i
+            excl_corr_i['iv_corr_var'] = bins_iv.loc[i+'_woe']['iv']
+            excl_corr_i = excl_corr_i.join(woe_corr[i+'_woe']).rename(columns={i+'_woe': 'corr'})
+            excl_corr.append(excl_corr_i)
+    excl_all = pd.concat(excl_corr)
+    excl_all = pd.concat([excl_all, excl_iv], axis=0, ignore_index=True)
+    excl_all.to_excel(save_to)
+    return var_list, excl_all

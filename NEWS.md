@@ -1,3 +1,6 @@
+# scorecardpy 1.0
+* customized working version
+
 # scorecardpy 0.1.9.2
 * fixed a bug in woebin function caused by the new function explode in pandas >= 0.25
 * fixed a bug when intialzing binning

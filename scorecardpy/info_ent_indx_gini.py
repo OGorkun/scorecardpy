@@ -200,6 +200,3 @@ def ig_01(good, bad):
     df_gini['xN_distr'] = df_gini.apply({'count':lambda x: x/sum(x)})
     # return
     return sum(df_gini.bin_ig*df_gini.xN_distr)
-    
-
-
