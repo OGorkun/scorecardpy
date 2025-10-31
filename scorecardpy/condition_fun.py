@@ -4,197 +4,156 @@ import pandas as pd
 import numpy as np
 import warnings
 import re
+import ast
 from pandas.api.types import is_numeric_dtype
 
+
 def str_to_list(x):
-    if x is not None and isinstance(x, str):
-        x = [x]
-    return x
-    
-# remove constant columns
+    return [x] if isinstance(x, str) else x
+
+
 def check_const_cols(dat):
-    # remove only 1 unique vlaues variable 
-    unique1_cols = [i for i in list(dat) if len(dat[i].unique())==1]
-    if len(unique1_cols) > 0:
-        warnings.warn("There are {} columns have only one unique values, which are removed from input dataset. \n (ColumnNames: {})".format(len(unique1_cols), ', '.join(unique1_cols)))
-        dat=dat.drop(unique1_cols, axis=1)
+    unique1_cols = [col for col in dat.columns if dat[col].nunique(dropna=False) == 1]
+    if unique1_cols:
+        warnings.warn(
+            f"There are {len(unique1_cols)} columns with only one unique value, removed: {', '.join(unique1_cols)}",
+            stacklevel=2
+        )
+        dat = dat.drop(columns=unique1_cols)
     return dat
 
-# remove date time columns
+
 def check_datetime_cols(dat):
-    datetime_cols = dat.apply(pd.to_numeric,errors='ignore').select_dtypes(object).apply(pd.to_datetime,errors='ignore').select_dtypes('datetime64').columns.tolist()
-    #datetime_cols = dat_time.dtypes[dat_time.dtypes == 'datetime64[ns]'].index.tolist()
-    if len(datetime_cols) > 0:
-        warnings.warn("There are {} date/time type columns are removed from input dataset. \n (ColumnNames: {})".format(len(datetime_cols), ', '.join(datetime_cols)))
-        dat=dat.drop(datetime_cols, axis=1)
+    datetime_cols = dat.select_dtypes(include=['datetime64[ns]', 'datetime64[ns, UTC]']).columns.tolist()
+    if datetime_cols:
+        warnings.warn(
+            f"There are {len(datetime_cols)} datetime columns removed: {', '.join(datetime_cols)}",
+            stacklevel=2
+        )
+        dat = dat.drop(columns=datetime_cols)
     return dat
 
-# check categorical columns' unique values
-def check_cateCols_uniqueValues(dat, var_skip = None):
-    # character columns with too many unique values
-    char_cols = [i for i in list(dat) if not is_numeric_dtype(dat[i])]
-    if var_skip is not None: 
+
+def check_cateCols_uniqueValues(dat, var_skip=None, confirm=True):
+    char_cols = [col for col in dat.columns if not is_numeric_dtype(dat[col])]
+    if var_skip is not None:
         char_cols = list(set(char_cols) - set(str_to_list(var_skip)))
-    char_cols_too_many_unique = [i for i in char_cols if len(dat[i].unique()) >= 50]
-    if len(char_cols_too_many_unique) > 0:
-        print('>>> There are {} variables have too many unique non-numberic values, which might cause the binning process slow. Please double check the following variables: \n{}'.format(len(char_cols_too_many_unique), ', '.join(char_cols_too_many_unique)))
-        print('>>> Continue the binning process?')
-        print('1: yes \n2: no')
-        cont = int(input("Selection: "))
-        while cont not in [1, 2]:
-            cont = int(input("Selection: "))
-        if cont == 2:
-            raise SystemExit(0)
+
+    too_many_uniques = [col for col in char_cols if dat[col].nunique(dropna=False) >= 50]
+    if too_many_uniques:
+        msg = (
+            f">>> {len(too_many_uniques)} variables have too many unique values:\n"
+            f"{', '.join(too_many_uniques)}"
+        )
+        warnings.warn(msg, stacklevel=2)
+        if confirm:
+            response = input("Continue binning? (y/n): ").strip().lower()
+            if response != 'y':
+                raise SystemExit("Stopped by user due to too many unique categorical values.")
     return None
 
 
-# replace blank by NA
-#' @import data.table
-#'
-def rep_blank_na(dat): # cant replace blank string in categorical value with nan
-    # remove duplicated index
+def rep_blank_na(dat):
     if dat.index.duplicated().any():
-        dat = dat.reset_index(drop = True)
-        warnings.warn('There are duplicated index in dataset. The index has been reseted.')
+        dat = dat.reset_index(drop=True)
+        warnings.warn("Duplicated index found and reset.", stacklevel=2)
 
-    # replace "" with NaN
-    blank_cols = [col for col in list(dat) if
-                  dat[col].astype(str).str.findall(r'^\s*$').apply(lambda x: 0 if len(x) == 0 else 1).sum() > 0]
-    if len(blank_cols) > 0:
-        warnings.warn('There are blank strings in {} columns, which are replaced with NaN. \n (ColumnNames: {})'.format(
-            len(blank_cols), ', '.join(blank_cols)))
-        #        dat[dat == [' ','']] = np.nan
-        #        dat2 = dat.apply(lambda x: x.str.strip()).replace(r'^\s*$', np.nan, regex=True)
-        for col in blank_cols:
-            dat.loc[dat[col] == "", col] = np.nan
+    # Replace blank strings with NaN
+    dat = dat.apply(lambda col: col.replace(r'^\s*$', np.nan, regex=True) if col.dtype == 'object' else col)
 
-    # replace inf with -999
-    cols_num = [col for col in list(dat) if col not in blank_cols]
-    if len(cols_num) > 0:
-        cols_inf = [col for col in cols_num if
-                        any(dat[col] == np.inf) | any(dat[col] == -np.inf)]
-        if len(cols_inf) > 0:
-            warnings.warn(
-                'There are infinite or NaN values in {} columns, which are replaced with -999.\n (ColumnNames: {})'.format(
-                    len(cols_inf), ', '.join(cols_inf)))
-            for col in cols_inf:
-                dat.loc[(dat[col] == np.inf) | (dat[col] == -np.inf), col] = -999
-    
+    # Replace inf/-inf
+    num_cols = dat.select_dtypes(include='number').columns
+    for col in num_cols:
+        if np.isinf(dat[col]).any():
+            warnings.warn(f"Infinite values found in '{col}', replaced with -999.", stacklevel=2)
+            dat[col] = dat[col].replace([np.inf, -np.inf], -999)
     return dat
 
 
-# check y
-#' @import data.table
-#'
 def check_y(dat, y, positive):
-    positive = str(positive)
-    # ncol of dt
     if not isinstance(dat, pd.DataFrame):
-        raise Exception("Incorrect inputs; dat should be a DataFrame.")
-    elif dat.shape[1] <= 1:
-        raise Exception("Incorrect inputs; dat should be a DataFrame with at least two columns.")
+        raise TypeError("Input must be a pandas DataFrame.")
+    if dat.shape[1] <= 1:
+        raise ValueError("DataFrame must have at least two columns.")
 
-    # y ------
     y = str_to_list(y)
-    # length of y == 1
     if len(y) != 1:
-        raise Exception("Incorrect inputs; the length of y should be one")
-    
+        raise ValueError("`y` must contain exactly one column name.")
     y = y[0]
-    # y not in dat.columns
-    if y not in dat.columns: 
-        raise Exception("Incorrect inputs; there is no \'{}\' column in dat.".format(y))
-    
-    # remove na in y
-    if dat[y].isnull().any():
-        warnings.warn("There are NaNs in \'{}\' column. The rows with NaN in \'{}\' were removed from dat.".format(y,y))
+
+    if y not in dat.columns:
+        raise KeyError(f"No '{y}' column found in DataFrame.")
+
+    if dat[y].isna().any():
+        warnings.warn(f"NaNs found in '{y}', corresponding rows removed.", stacklevel=2)
         dat = dat.dropna(subset=[y])
-        # dat = dat[pd.notna(dat[y])]
-    
-    # numeric y to int
-    if is_numeric_dtype(dat[y]): # TODO - add check for nan
-        dat = dat.astype({y: int})#dat[y].apply(lambda x: x if pd.isnull(x) else int(x)) #dat[y].astype(int)
-    # length of unique values in y
-    unique_y = np.unique(dat[y].values)
-    if len(unique_y) == 2:
-        # if [v not in [0,1] for v in unique_y] == [True, True]:
-        if True in [bool(re.search(positive, str(v))) for v in unique_y]:
-            y1 = dat[y]
-            y2 = dat[y].apply(lambda x: 1 if str(x) in re.split('\|', positive) else 0)
-            if (y1 != y2).any():
-                dat.loc[:,y] = y2#dat[y] = y2
-                warnings.warn("The positive value in \"{}\" was replaced by 1 and negative value by 0.".format(y))
-        else:
-            raise Exception("Incorrect inputs; the positive value in \"{}\" is not specified".format(y))
+
+    # Convert numeric y safely
+    if is_numeric_dtype(dat[y]):
+        dat[y] = dat[y].astype('Int64')
+
+    unique_y = dat[y].dropna().unique()
+    if len(unique_y) != 2:
+        raise ValueError(f"Target '{y}' must have exactly two unique values.")
+
+    # If the two values are already 0/1 (or their string forms), keep them and return
+    vals_str = set(str(v) for v in unique_y)
+    if vals_str.issubset({'0', '1'}):
+        # ensure numeric 0/1
+        dat[y] = dat[y].astype(int)
+        return dat
+
+    if any(re.search(positive, str(v)) for v in unique_y):
+        dat[y] = dat[y].astype(str).apply(lambda x: 1 if re.search(positive, x) else 0)
+        warnings.warn(f"Positive value in '{y}' replaced by 1, negative by 0.", stacklevel=2)
     else:
-        raise Exception("Incorrect inputs; the length of unique values in y column \'{}\' != 2.".format(y))
-    
+        raise ValueError(f"Positive class not found in '{y}'.")
     return dat
 
 
-# check print_step
-#' @import data.table
-#'
 def check_print_step(print_step):
-    if not isinstance(print_step, (int, float)) or print_step<0:
-        warnings.warn("Incorrect inputs; print_step should be a non-negative integer. It was set to 1.")
-        print_step = 1
-    return print_step
+    if not isinstance(print_step, (int, float)) or print_step < 0:
+        warnings.warn("`print_step` must be a non-negative number. Reset to 1.", stacklevel=2)
+        return 1
+    return int(print_step)
 
 
-# x variable
 def x_variable(dat, y, x, var_skip=None):
     y = str_to_list(y)
-    if var_skip is not None: y = y + str_to_list(var_skip)
+    if var_skip:
+        y += str_to_list(var_skip)
     x_all = list(set(dat.columns) - set(y))
-    
+
     if x is None:
-        x = x_all
-    else:
-        x = str_to_list(x)
-            
-        if any([i in list(x_all) for i in x]) is False:
-            x = x_all
-        else:
-            x_notin_xall = set(x).difference(x_all)
-            if len(x_notin_xall) > 0:
-                warnings.warn("Incorrect inputs; there are {} x variables are not exist in input data, which are removed from x. \n({})".format(len(x_notin_xall), ', '.join(x_notin_xall)))
-                x = set(x).intersection(x_all)
-            
-    return list(x)
+        return x_all
+
+    x = str_to_list(x)
+    x_not_found = set(x) - set(x_all)
+    if x_not_found:
+        warnings.warn(f"{len(x_not_found)} variables not found and removed: {', '.join(x_not_found)}", stacklevel=2)
+    x = list(set(x) & set(x_all))
+    return x
 
 
-# check breaks_list
 def check_breaks_list(breaks_list, xs):
-    if breaks_list is not None:
-        # is string
-        if isinstance(breaks_list, str):
-            breaks_list = breaks_list.replace("[inf]", "[np.inf]")
-            breaks_list = eval(breaks_list) # TODO - check eval step
-        # is not dict
-        if not isinstance(breaks_list, dict):
-            raise Exception("Incorrect inputs; breaks_list should be a dict.")
+    if breaks_list is None:
+        return None
+    if isinstance(breaks_list, str):
+        breaks_list = breaks_list.replace("[inf]", "[np.inf]")
+        breaks_list = ast.literal_eval(breaks_list)
+    if not isinstance(breaks_list, dict):
+        raise TypeError("`breaks_list` must be a dictionary.")
     return breaks_list
 
 
-# check special_values
 def check_special_values(dt, special_values, xs):
-    if special_values is not None:
-        # # is string
-        # if isinstance(special_values, str):
-        #     special_values = eval(special_values)
-        if isinstance(special_values, list):
-            #warnings.warn("The special_values should be a dict. Make sure special values are exactly the same in all variables if special_values is a list.")
-            sv_dict = {}
-            for i in xs:
-                for spl_val in special_values:
-                    sv_i = []
-                    if spl_val in dt[i].unique():
-                        sv_i = sv_i + [spl_val]
-                if sv_i: sv_dict[i] = sv_i
-            special_values = sv_dict
-        elif not isinstance(special_values, dict): 
-            raise Exception("Incorrect inputs; special_values should be a list or dict.")
+    if special_values is None:
+        return None
+    if isinstance(special_values, list):
+        sv_dict = {i: [v for v in special_values if v in dt[i].unique()] for i in xs}
+        return {k: v for k, v in sv_dict.items() if v}
+    if not isinstance(special_values, dict):
+        raise TypeError("`special_values` must be a list or dictionary.")
     return special_values
 
 
@@ -203,9 +162,13 @@ def check_max_bin_num(dt, xs, min_perc_fine_bin, bin_decimals):
     for i in xs:
         dt_i = dt[i]
         if is_numeric_dtype(dt_i):
-            dt_i = dt_i.round(decimals=bin_decimals)
-        if max(dt_i.value_counts()) > (1 - min_perc_fine_bin) * len(dt.index):
-            var_one_bin = var_one_bin + [i]
-    warnings.warn("There are {} x variables that cannot be splitted into bins, they are removed from x. \n({})".format(
-        len(var_one_bin), ', '.join(var_one_bin)), stacklevel=2)
+            dt_i = dt_i.round(bin_decimals)
+        if dt_i.value_counts(normalize=True).max() > (1 - min_perc_fine_bin):
+            var_one_bin.append(i)
+
+    if var_one_bin:
+        warnings.warn(
+            f"{len(var_one_bin)} variables cannot be split into bins and will be removed: {', '.join(var_one_bin)}",
+            stacklevel=2
+        )
     return var_one_bin

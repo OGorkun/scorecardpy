@@ -1,101 +1,99 @@
 import numpy as np
 import pandas as pd
-from pandas.api.types import is_numeric_dtype
+from pandas.api.types import is_numeric_dtype, is_datetime64_any_dtype
 from .condition_fun import *
 
-def one_hot(dt, cols_skip = None, cols_encode = None, nacol_rm = False, 
-            replace_na = -1, category_to_integer = False):
-    '''
+
+def one_hot(
+    dt,
+    cols_skip=None,
+    cols_encode=None,
+    nacol_rm=False,
+    replace_na=-1,
+    category_to_integer=False
+):
+    """
     One Hot Encoding
     ------
-    One-hot encoding on categorical variables. It is not needed when creating 
-    a standard scorecard model, but required in models that without doing woe 
-    transformation.
-    
-    Params
-    ------
-    dt: A data frame.
-    cols_skip: Name of categorical variables that will skip and without doing 
-        one-hot encoding. Default is None.
-    cols_encode: Name of categorical variables to be one-hot encoded, default 
-        is None. If it is None, then all categorical variables except in 
-        cols_skip are counted.
-    nacol_rm: Logical. One-hot encoding on categorical variable contains missing 
-        values, whether to remove the column generated to indicate the presence 
-        of NAs. Default is False.
-    replace_na: Replace missing values with a specified value such as -1 by 
-        default, or the mean/median value of the variable in which they occur. 
-        If it is None, then no missing values will be replaced.
-    factor_to_integer: Logical. Converting categorical variables to integer. 
-        Default is False.
-    
+    Performs one-hot encoding on categorical variables. Useful when models
+    require numeric input instead of WOE-transformed variables.
+
+    Parameters
+    ----------
+    dt : pd.DataFrame
+        Input dataframe.
+    cols_skip : list or str, optional
+        Columns to skip from encoding.
+    cols_encode : list or str, optional
+        Columns to encode; if None, automatically detect all categorical.
+    nacol_rm : bool, default False
+        If True, remove dummy columns indicating NA values.
+    replace_na : {int, float, str, None}, default -1
+        Value or method ('mean', 'median') to replace missing values.
+    category_to_integer : bool, default False
+        If True, convert category dtypes to integer labels before encoding.
+
     Returns
-    ------
-    A one-hot encoded data frame.
-    
-    Examples
-    ------
-    import scorecardpy as sc
-    import pandas as pd
-    
-    # load data
-    dat1 = sc.germancredit()
-    dat2 = pd.DataFrame({'creditability':['good','bad']}).sample(50, replace=True)
-    dat = pd.concat([dat1, dat2], ignore_index=True)
-    
-    dt_oh0 = sc.one_hot(dat, cols_skip = 'creditability', nacol_rm = False) # default
-    dt_oh1 = sc.one_hot(dat, cols_skip = 'creditability', nacol_rm = True)
-    
-    dt_oh2 = sc.one_hot(dat, cols_skip = 'creditability', replace_na = -1) # default
-    dt_oh3 = sc.one_hot(dat, cols_skip = 'creditability', replace_na = 'median')
-    dt_oh4 = sc.one_hot(dat, cols_skip = 'creditability', replace_na = None)
-    '''
-    
-    # if it is str, converting to list
-    cols_skip, cols_encode = str_to_list(cols_skip), str_to_list(cols_encode)
-    # category columns into integer
+    -------
+    pd.DataFrame
+        One-hot encoded dataframe.
+    """
+    # Convert skip and encode columns to list
+    cols_skip = str_to_list(cols_skip)
+    cols_encode = str_to_list(cols_encode)
+
+    dt = dt.copy(deep=True)
+
+    # Convert categorical columns to integers if requested
     if category_to_integer:
-        cols_cate = dt.dtypes[dt.dtypes == 'category'].index.tolist()
-        if cols_skip is not None:
-            cols_cate = list(set(cols_cate) - set(cols_skip))
-        dt[cols_cate] = dt[cols_cate].apply(lambda x: pd.factorize(x, sort=True)[0])
-    # columns encoding
+        cols_cate = dt.select_dtypes(include=["category"]).columns.tolist()
+        if cols_skip:
+            cols_cate = [c for c in cols_cate if c not in cols_skip]
+        for c in cols_cate:
+            dt[c] = pd.factorize(dt[c], sort=True)[0]
+
+    # Determine columns to encode
     if cols_encode is None:
-        cols_encode = char_cols = [i for i in list(dt) if not is_numeric_dtype(dt[i]) 
-            and dt[i].dtypes != 'datetime64[ns]']
+        cols_encode = [
+            c for c in dt.columns
+            if not is_numeric_dtype(dt[c]) and not is_datetime64_any_dtype(dt[c])
+        ]
     else:
         cols_encode = x_variable(dt, y=cols_skip, x=cols_encode)
-    # columns skip
-    if cols_skip is not None:
-        cols_encode = list(set(cols_encode) - set(cols_skip))
-    # one hot encoding
-    if cols_encode is None or len(cols_encode) == 0:
+
+    # Remove skipped columns
+    if cols_skip:
+        cols_encode = [c for c in cols_encode if c not in cols_skip]
+
+    # Perform one-hot encoding
+    if not cols_encode:
         dt_new = dt
     else:
-        temp_dt = pd.get_dummies(dt[cols_encode], dummy_na = not nacol_rm)
-        # remove cols that unique len == 1 and has _nan
-        rm_cols_nan1 = [i for i in list(temp_dt) if len(temp_dt[i].unique())==1 and '_nan' in i]
-        dt_new = pd.concat([dt.drop(cols_encode, axis=1), temp_dt.drop(rm_cols_nan1, axis=1)], axis=1)
-    # replace missing values with fillna
-    def rep_na(x, repalce_na):
-        if x.isna().values.any():
-            # dtype is numeric
-            xisnum = is_numeric_dtype(x)
-            if isinstance(repalce_na, (int, float)):
-                fill_na = repalce_na
-            elif replace_na in ['mean', 'median'] and xisnum:
-                fill_na = getattr(np, 'mean')(x)
-            else:
-                fill_na = -1
-            # set fill_na as str if x is not num
-            if not xisnum:
-                fill_na = str(fill_na)
-            x = x.fillna(fill_na)
-        return x
+        temp_dt = pd.get_dummies(dt[cols_encode], dummy_na=not nacol_rm, dtype=float)
+        rm_cols_nan1 = [
+            c for c in temp_dt.columns
+            if temp_dt[c].nunique(dropna=False) == 1 and "_nan" in c
+        ]
+        temp_dt = temp_dt.drop(columns=rm_cols_nan1, errors="ignore")
+        dt_new = pd.concat([dt.drop(columns=cols_encode), temp_dt], axis=1)
+
+    # Helper function for missing value replacement
+    def rep_na(x):
+        if not x.isna().any():
+            return x
+        if isinstance(replace_na, (int, float)):
+            fill_val = replace_na
+        elif replace_na == "mean" and is_numeric_dtype(x):
+            fill_val = x.mean()
+        elif replace_na == "median" and is_numeric_dtype(x):
+            fill_val = x.median()
+        else:
+            fill_val = -1
+        return x.fillna(fill_val)
+
+    # Replace missing values globally if needed
     if replace_na is not None:
-        names_fillna = list(dt_new) 
-        if cols_skip is not None: names_fillna = list(set(names_fillna)-set(cols_skip))
-        dt_new[names_fillna] = dt_new[names_fillna].apply(lambda x: rep_na(x, replace_na))
-    # return
+        fill_cols = [c for c in dt_new.columns if not (cols_skip and c in cols_skip)]
+        dt_new[fill_cols] = dt_new[fill_cols].apply(rep_na)
+
     return dt_new
-  

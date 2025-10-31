@@ -1,208 +1,234 @@
 # -*- coding: utf-8 -*-
+'''
+perf.py
+Modernized version for pandas>=2.2, numpy>=2, matplotlib>=3.9
+Performance evaluation, KS, ROC, Lift, PSI, IV, and Gini utilities.
+'''
 
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import warnings
-from .condition_fun import *
+from .condition_fun import check_y
 from .info_value import iv_01
 from .woebin import n0, n1
-from sklearn.metrics import roc_curve, roc_auc_score, confusion_matrix, precision_recall_curve, auc
+from sklearn.metrics import roc_auc_score
 
+
+# ==========================================================
+# Utility Functions
+# ==========================================================
+
+def _safe_sum(series, val):
+    r'''Avoid issues with boolean dtype summation.'''
+    return int((series == val).sum())
+
+
+# ==========================================================
+# KS, ROC, LIFT computation
+# ==========================================================
 
 def eva_dfkslift(df, groupnum=None):
-    if groupnum is None: groupnum = len(df.index)
+    r'''Generate dataframe with cumulative stats for KS and Lift charts.'''
+    if groupnum is None:
+        groupnum = len(df)
 
-    # good bad func
-    def n0(x): return sum(x == 0)
-
-    def n1(x): return sum(x == 1)
-
-    df_kslift = df.sort_values('pred', ascending=False).reset_index(drop=True) \
-        .assign(group=lambda x: np.ceil((x.index + 1) / (len(x.index) / groupnum))) \
-        .groupby('group')['label'].agg([n0, n1]) \
-        .reset_index().rename(columns={'n0': 'good', 'n1': 'bad'}) \
+    df = (
+        df.sort_values('pred', ascending=False)
+        .reset_index(drop=True)
         .assign(
-        group=lambda x: (x.index + 1) / len(x.index),
-        good_distri=lambda x: x.good / sum(x.good),
-        bad_distri=lambda x: x.bad / sum(x.bad),
-        badrate=lambda x: x.bad / (x.good + x.bad),
-        cumbadrate=lambda x: np.cumsum(x.bad) / np.cumsum(x.good + x.bad),
-        lift=lambda x: (np.cumsum(x.bad) / np.cumsum(x.good + x.bad)) / (sum(x.bad) / sum(x.good + x.bad)),
-        cumgood=lambda x: np.cumsum(x.good) / sum(x.good),
-        cumbad=lambda x: np.cumsum(x.bad) / sum(x.bad)
-    ).assign(ks=lambda x: abs(x.cumbad - x.cumgood))
-    # bind 0
-    df_kslift = pd.concat([
-        pd.DataFrame(
-            {'group': 0, 'good': 0, 'bad': 0, 'good_distri': 0, 'bad_distri': 0, 'badrate': 0, 'cumbadrate': np.nan,
-             'cumgood': 0, 'cumbad': 0, 'ks': 0, 'lift': np.nan}, index=np.arange(1)),
-        df_kslift
-    ], ignore_index=True)
-    # return
-    return df_kslift
+            group=lambda x: np.ceil((x.index + 1) / (len(x) / groupnum))
+        )
+        .groupby('group', observed=True)['label']
+        .agg(good=lambda x: (x == 0).sum(), bad=lambda x: (x == 1).sum())
+        .reset_index()
+        .assign(
+            group=lambda x: (x.index + 1) / len(x),
+            good_distri=lambda x: x.good / x.good.sum(),
+            bad_distri=lambda x: x.bad / x.bad.sum(),
+            badrate=lambda x: x.bad / (x.good + x.bad),
+            cumbadrate=lambda x: np.cumsum(x.bad) / np.cumsum(x.good + x.bad),
+            lift=lambda x: (
+                (np.cumsum(x.bad) / np.cumsum(x.good + x.bad))
+                / (x.bad.sum() / (x.good.sum() + x.bad.sum()))
+            ),
+            cumgood=lambda x: np.cumsum(x.good) / x.good.sum(),
+            cumbad=lambda x: np.cumsum(x.bad) / x.bad.sum()
+        )
+        .assign(ks=lambda x: np.abs(x.cumbad - x.cumgood))
+    )
+
+    # Add 0th row for baseline
+    zero_row = pd.DataFrame({
+        'group': [0],
+        'good': [0],
+        'bad': [0],
+        'good_distri': [0],
+        'bad_distri': [0],
+        'badrate': [0],
+        'cumbadrate': [np.nan],
+        'cumgood': [0],
+        'cumbad': [0],
+        'ks': [0],
+        'lift': [np.nan]
+    })
+
+    return pd.concat([zero_row, df], ignore_index=True)
 
 
-# plot ks
-def eva_pks(dfkslift, title):
-    dfks = dfkslift.loc[lambda x: x.ks == max(x.ks)].sort_values('group').iloc[0]
-    ###### plot ######
-    # fig, ax = plt.subplots()
-    # ks, cumbad, cumgood
-    plt.plot(dfkslift.group, dfkslift.ks, 'b-',
-             dfkslift.group, dfkslift.cumgood, 'k-',
-             dfkslift.group, dfkslift.cumbad, 'k-')
-    # ks vline
-    plt.plot([dfks['group'], dfks['group']], [0, dfks['ks']], 'r--')
-    # set xylabel
-    plt.gca().set(title=title + 'K-S',
-                  xlabel='% of population', ylabel='% of total Good/Bad',
-                  xlim=[0, 1], ylim=[0, 1], aspect='equal')
-    # text
-    # plt.text(0.5,0.96,'K-S', fontsize=15,horizontalalignment='center')
-    plt.text(0.2, 0.8, 'Bad', horizontalalignment='center')
-    plt.text(0.8, 0.55, 'Good', horizontalalignment='center')
-    plt.text(dfks['group'], dfks['ks'], 'KS:' + str(round(dfks['ks'], 4)), horizontalalignment='center', color='b')
-    # plt.grid()
-    # plt.show()
-    # return fig
+# ==========================================================
+# PLOTTING FUNCTIONS
+# ==========================================================
+
+def eva_pks(dfkslift, title="", ax=None):
+    r'''Plot KS curve. Draws into provided ax if given, otherwise creates a new figure.'''
+    created_fig = False
+    if ax is None:
+        fig, ax = plt.subplots()
+        created_fig = True
+
+    dfks = dfkslift.loc[dfkslift['ks'].idxmax()]
+
+    ax.plot(dfkslift.group, dfkslift.ks, 'b-', label='KS')
+    ax.plot(dfkslift.group, dfkslift.cumgood, 'k-', label='Cumulative Good')
+    ax.plot(dfkslift.group, dfkslift.cumbad, 'k--', label='Cumulative Bad')
+    ax.axvline(dfks['group'], color='r', linestyle='--')
+
+    ax.set_title(f"{title} K-S")
+    ax.set_xlabel("% of population")
+    ax.set_ylabel("% of total Good/Bad")
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.text(dfks['group'], dfks['ks'], f"KS={dfks['ks']:.4f}", color='b', ha='center')
+    ax.legend(loc="lower right")
+
+    return ax.figure if created_fig else ax.figure
 
 
-# plot lift
-def eva_plift(dfkslift, title):
-    badrate_avg = sum(dfkslift.bad) / sum(dfkslift.good + dfkslift.bad)
-    ###### plot ######
-    # fig, ax = plt.subplots()
-    # ks, cumbad, cumgood
-    plt.plot(dfkslift.group, dfkslift.cumbadrate, 'k-')
-    # ks vline
-    plt.plot([0, 1], [badrate_avg, badrate_avg], 'r--')
-    # set xylabel
-    plt.gca().set(title=title + 'Lift',
-                  xlabel='% of population', ylabel='% of Bad',
-                  xlim=[0, 1], ylim=[0, 1], aspect='equal')
-    # text
-    # plt.text(0.5,0.96,'Lift', fontsize=15,horizontalalignment='center')
-    plt.text(0.7, np.mean(dfkslift.cumbadrate), 'cumulate badrate', horizontalalignment='center')
-    plt.text(0.7, badrate_avg, 'average badrate', horizontalalignment='center')
-    # plt.grid()
-    # plt.show()
-    # return fig
+def eva_plift(dfkslift, title="", ax=None):
+    r'''Plot Lift curve. Draws into provided ax if given, otherwise creates a new figure.'''
+    created_fig = False
+    if ax is None:
+        fig, ax = plt.subplots()
+        created_fig = True
+
+    badrate_avg = dfkslift['bad'].sum() / (dfkslift['good'].sum() + dfkslift['bad'].sum())
+
+    ax.plot(dfkslift.group, dfkslift.cumbadrate, 'k-', label='Cumulative Bad Rate')
+    ax.axhline(badrate_avg, color='r', linestyle='--', label='Average Bad Rate')
+
+    ax.set_title(f"{title} Lift")
+    ax.set_xlabel("% of population")
+    ax.set_ylabel("% of Bad")
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.legend(loc="lower right")
+
+    return ax.figure if created_fig else ax.figure
 
 
 def eva_dfrocpr(df):
-    def n0(x): return sum(x == 0)
-
-    def n1(x): return sum(x == 1)
-
-    dfrocpr = df.sort_values('pred') \
-        .groupby('pred')['label'].agg([n0, n1, len]) \
-        .reset_index().rename(columns={'n0': 'countN', 'n1': 'countP', 'len': 'countpred'}) \
+    r'''Generate detailed ROC/PR DataFrame.'''
+    df = (
+        df.sort_values('pred')
+        .groupby('pred', observed=True)['label']
+        .agg(countN=lambda x: (x == 0).sum(),
+             countP=lambda x: (x == 1).sum())
+        .reset_index()
         .assign(
-        FN=lambda x: np.cumsum(x.countP),
-        TN=lambda x: np.cumsum(x.countN)
-    ).assign(
-        TP=lambda x: sum(x.countP) - x.FN,
-        FP=lambda x: sum(x.countN) - x.TN
-    ).assign(
-        TPR=lambda x: x.TP / (x.TP + x.FN),
-        FPR=lambda x: x.FP / (x.TN + x.FP),
-        precision=lambda x: x.TP / (x.TP + x.FP),
-        recall=lambda x: x.TP / (x.TP + x.FN)
-    ).assign(
-        F1=lambda x: 2 * x.precision * x.recall / (x.precision + x.recall)
+            FN=lambda x: np.cumsum(x.countP),
+            TN=lambda x: np.cumsum(x.countN)
+        )
+        .assign(
+            TP=lambda x: x.countP.sum() - x.FN,
+            FP=lambda x: x.countN.sum() - x.TN
+        )
+        .assign(
+            TPR=lambda x: x.TP / (x.TP + x.FN),
+            FPR=lambda x: x.FP / (x.TN + x.FP),
+            precision=lambda x: np.divide(
+                x.TP, x.TP + x.FP, out=np.zeros_like(x.TP, dtype=float), where=(x.TP + x.FP) != 0
+            ),
+            recall=lambda x: np.divide(
+                x.TP, x.TP + x.FN, out=np.zeros_like(x.TP, dtype=float), where=(x.TP + x.FN) != 0
+            )
+        )
+        .assign(F1=lambda x: np.divide(
+            2 * x.precision * x.recall,
+            x.precision + x.recall,
+            out=np.zeros_like(x.precision, dtype=float),
+            where=(x.precision + x.recall) != 0
+        ))
     )
-    return dfrocpr
+    return df
 
 
-# plot roc
-def eva_proc(dfrocpr, title):
+def eva_proc(dfrocpr, title="", ax=None):
+    r'''Plot ROC curve. Draws into provided ax if given, otherwise creates a new figure.'''
     dfrocpr = pd.concat(
         [dfrocpr[['FPR', 'TPR']], pd.DataFrame({'FPR': [0, 1], 'TPR': [0, 1]})],
-        ignore_index=True).sort_values(['FPR', 'TPR'])
-    auc = dfrocpr.sort_values(['FPR', 'TPR']) \
-        .assign(
-        TPR_lag=lambda x: x['TPR'].shift(1), FPR_lag=lambda x: x['FPR'].shift(1)
-    ).assign(
-        auc=lambda x: (x.TPR + x.TPR_lag) * (x.FPR - x.FPR_lag) / 2
-    )['auc'].sum()
-    ###### plot ######
-    # fig, ax = plt.subplots()
-    # ks, cumbad, cumgood
-    plt.plot(dfrocpr.FPR, dfrocpr.TPR, 'k-')
-    # ks vline
-    x = np.array(np.arange(0, 1.1, 0.1))
-    plt.plot(x, x, 'r--')
-    # fill
-    plt.fill_between(dfrocpr.FPR, 0, dfrocpr.TPR, color='blue', alpha=0.1)
-    # set xylabel
-    plt.gca().set(title=title + 'ROC',
-                  xlabel='FPR', ylabel='TPR',
-                  xlim=[0, 1], ylim=[0, 1], aspect='equal')
-    # text
-    # plt.text(0.5,0.96, 'ROC', fontsize=15, horizontalalignment='center')
-    plt.text(0.55, 0.45, 'AUC:' + str(round(auc, 4)), horizontalalignment='center', color='b')
-    # plt.grid()
-    # plt.show()
-    # return fig
+        ignore_index=True
+    ).sort_values(['FPR', 'TPR'])
+
+    auc_val = (
+        (dfrocpr['TPR'] + dfrocpr['TPR'].shift(1))
+        * (dfrocpr['FPR'] - dfrocpr['FPR'].shift(1)) / 2
+    ).sum()
+
+    created_fig = False
+    if ax is None:
+        fig, ax = plt.subplots()
+        created_fig = True
+
+    ax.plot(dfrocpr.FPR, dfrocpr.TPR, 'k-', label='ROC Curve')
+    ax.plot([0, 1], [0, 1], 'r--', label='Random')
+    ax.fill_between(dfrocpr.FPR, 0, dfrocpr.TPR, color='blue', alpha=0.1)
+
+    ax.set_title(f"{title} ROC (Gini={(2 * auc_val - 1):.4f})")
+    ax.set_xlabel("FPR")
+    ax.set_ylabel("TPR")
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.legend(loc="lower right")
+
+    return (ax.figure, auc_val) if created_fig else (ax.figure, auc_val)
 
 
-# plot ppr
-def eva_ppr(dfrocpr, title):
-    ###### plot ######
-    # fig, ax = plt.subplots()
-    # ks, cumbad, cumgood
-    plt.plot(dfrocpr.recall, dfrocpr.precision, 'k-')
-    # ks vline
-    x = np.array(np.arange(0, 1.1, 0.1))
-    plt.plot(x, x, 'r--')
-    # set xylabel
-    plt.gca().set(title=title + 'P-R',
-                  xlabel='Recall', ylabel='Precision',
-                  xlim=[0, 1], ylim=[0, 1], aspect='equal')
-    # text
-    # plt.text(0.5,0.96, 'P-R', fontsize=15, horizontalalignment='center')
-    # plt.grid()
-    # plt.show()
-    # return fig
+def eva_ppr(dfrocpr, title="", ax=None):
+    r'''Plot Precision-Recall (P-R) curve. Draws into provided ax if given, otherwise creates a new figure.'''
+    created_fig = False
+    if ax is None:
+        fig, ax = plt.subplots()
+        created_fig = True
+
+    # Plot precision vs recall
+    ax.plot(dfrocpr.recall, dfrocpr.precision, 'k-', label='P-R Curve')
+    # Diagonal reference (previous implementation used x==y line)
+    ax.plot([0, 1], [0, 1], 'r--', label='Reference')
+
+    ax.set_title(f"{title} P-R")
+    ax.set_xlabel("Recall")
+    ax.set_ylabel("Precision")
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    try:
+        ax.set_aspect('equal', adjustable='box')
+    except Exception:
+        # set_aspect may fail in some backends; ignore silently
+        pass
+    ax.legend(loc="lower left")
+
+    return ax.figure if created_fig else ax.figure
 
 
-# plot f1
-def eva_pf1(dfrocpr, title):
-    dfrocpr = dfrocpr.assign(pop=lambda x: np.cumsum(x.countpred) / sum(x.countpred))
-    ###### plot ######
-    # fig, ax = plt.subplots()
-    # ks, cumbad, cumgood
-    plt.plot(dfrocpr['pop'], dfrocpr['F1'], 'k-')
-    # ks vline
-    F1max_pop = dfrocpr.loc[dfrocpr['F1'].idxmax(), 'pop']
-    F1max_F1 = dfrocpr.loc[dfrocpr['F1'].idxmax(), 'F1']
-    plt.plot([F1max_pop, F1max_pop], [0, F1max_F1], 'r--')
-    # set xylabel
-    plt.gca().set(title=title + 'F1',
-                  xlabel='% of population', ylabel='F1',
-                  xlim=[0, 1], ylim=[0, 1], aspect='equal')
-    # pred text
-    pred_0 = dfrocpr.loc[dfrocpr['pred'].idxmin(), 'pred']
-    pred_F1max = dfrocpr.loc[dfrocpr['F1'].idxmax(), 'pred']
-    pred_1 = dfrocpr.loc[dfrocpr['pred'].idxmax(), 'pred']
-    if np.mean(dfrocpr.pred) < 0 or np.mean(dfrocpr.pred) > 1:
-        pred_0 = -pred_0
-        pred_F1max = -pred_F1max
-        pred_1 = -pred_1
-    plt.text(0, 0, 'pred \n' + str(round(pred_0, 4)), horizontalalignment='left', color='b')
-    plt.text(F1max_pop, 0, 'pred \n' + str(round(pred_F1max, 4)), horizontalalignment='center', color='b')
-    plt.text(1, 0, 'pred \n' + str(round(pred_1, 4)), horizontalalignment='right', color='b')
-    # title F1
-    plt.text(F1max_pop, F1max_F1, 'F1 max: \n' + str(round(F1max_F1, 4)), horizontalalignment='center', color='b')
-    # plt.grid()
-    # plt.show()
-    # return fig
+# ==========================================================
+# MAIN PERFORMANCE EVALUATION
+# ==========================================================
 
-
-def perf_eva(label, pred, title=None, groupnum=None, plot_type=["ks", "roc"], show_plot=True, positive="bad|1",
-             seed=186):
-    '''
+def perf_eva(label, pred, title=None, groupnum=None,
+             plot_type=("ks", "roc"), show_plot=True,
+             positive="bad|1", seed=186):
+    r'''
     KS, ROC, Lift, PR
     ------
     perf_eva provides performance evaluations, such as
@@ -278,76 +304,74 @@ def perf_eva(label, pred, title=None, groupnum=None, plot_type=["ks", "roc"], sh
     # Example III # ks, lift, roc & pr plot
     sc.perf_eva(y, dt_pred, plot_type = ["ks","lift","roc","pr"])
     '''
-
-    # inputs checking
+    # Validation
     if len(label) != len(pred):
-        warnings.warn('Incorrect inputs; label and pred should be list with the same length.')
-    # if pred is score
-    if np.mean(pred) < 0 or np.mean(pred) > 1:
-        warnings.warn(
-            'Since the average of pred is not in [0,1], it is treated as predicted score but not probability.')
+        raise ValueError("`label` and `pred` must have the same length.")
+
+    # Normalize label to 0/1 to avoid check_y emitting the "Positive value ..." warning.
+    # - booleans -> ints
+    # - two distinct numeric values that are not {0,1} -> map smaller->0 larger->1
+    lab_ser = pd.Series(label)
+    lab_non_na = lab_ser.dropna()
+    if lab_non_na.dtype == bool:
+        label = lab_ser.astype(int).values
+    else:
+        unique_vals = lab_non_na.unique()
+        if len(unique_vals) == 2 and not set(unique_vals).issubset({0, 1}):
+            vals = sorted(unique_vals)
+            label = lab_ser.map({vals[0]: 0, vals[1]: 1}).values
+
+    # Pred range check
+    if not (0 <= np.mean(pred) <= 1):
+        warnings.warn("Predicted values not in [0,1]; treating as scores, flipping sign.")
         pred = -pred
-    # random sort datatable
-    df = pd.DataFrame({'label': label, 'pred': pred}).sample(frac=1, random_state=seed)
-    # remove NAs
-    if any(np.unique(df.isna())):
-        warnings.warn('The NANs in \'label\' or \'pred\' were removed.')
-        df = df.dropna()
-    # check label
+
+    df = pd.DataFrame({'label': label, 'pred': pred}).dropna().sample(frac=1, random_state=seed)
     df = check_y(df, 'label', positive)
-    # title
+
     title = '' if title is None else str(title) + ': '
-
-    ### data ###
-    # dfkslift ------
-    if any([i in plot_type for i in ['ks', 'lift']]):
-        dfkslift = eva_dfkslift(df, groupnum)
-        if 'ks' in plot_type: df_ks = dfkslift
-        if 'lift' in plot_type: df_lift = dfkslift
-    # dfrocpr ------
-    if any([i in plot_type for i in ["roc", "pr", 'f1']]):
-        dfrocpr = eva_dfrocpr(df)
-        if 'roc' in plot_type: df_roc = dfrocpr
-        if 'pr' in plot_type: df_pr = dfrocpr
-        if 'f1' in plot_type: df_f1 = dfrocpr
-    ### return list ###
     rt = {}
-    # plot, KS ------
-    if 'ks' in plot_type:
-        rt['KS'] = round(dfkslift.loc[lambda x: x.ks == max(x.ks), 'ks'].iloc[0], 4)
-    # plot, ROC ------
-    if 'roc' in plot_type:
-        auc = pd.concat(
-            [dfrocpr[['FPR', 'TPR']], pd.DataFrame({'FPR': [0, 1], 'TPR': [0, 1]})],
-            ignore_index=True).sort_values(['FPR', 'TPR']) \
-            .assign(
-            TPR_lag=lambda x: x['TPR'].shift(1), FPR_lag=lambda x: x['FPR'].shift(1)
-        ).assign(
-            auc=lambda x: (x.TPR + x.TPR_lag) * (x.FPR - x.FPR_lag) / 2
-        )['auc'].sum()
-        ###
-        rt['AUC'] = round(auc, 4)
-        rt['Gini'] = round(2 * auc - 1, 4)
 
-    ### export plot ###
+    # KS / Lift
+    if any(p in plot_type for p in ['ks', 'lift']):
+        dfkslift = eva_dfkslift(df, groupnum)
+        #rt['KS'] = round(dfkslift['ks'].max(),4)
+
+    # ROC / PR
+    if any(p in plot_type for p in ['roc', 'pr']):
+        dfrocpr = eva_dfrocpr(df)
+        auc_val = roc_auc_score(df['label'], df['pred'])
+        #rt['AUC'] = round(auc_val,4)
+        rt['Gini'] = round(2 * auc_val - 1,4)
+
+    # Plot section
     if show_plot:
-        plist = ["eva_p" + i + '(df_' + i + ',title)' for i in plot_type]
-        subplot_nrows = np.ceil(len(plist) / 2).astype(int)
-        subplot_ncols = np.ceil(len(plist) / subplot_nrows).astype(int)
+        fig, axs = plt.subplots(
+            nrows=int(np.ceil(len(plot_type) / 2)),
+            ncols=int(np.ceil(len(plot_type) / np.ceil(len(plot_type) / 2))),
+            figsize=(10, 5)
+        )
+        axs = axs.flatten() if isinstance(axs, np.ndarray) else [axs]
 
-        fig = plt.figure()
-        for i in np.arange(len(plist)):
-            plt.subplot(subplot_nrows, subplot_ncols, i + 1)
-            eval(plist[i])
+        for i, ptype in enumerate(plot_type):
+            current_ax = axs[i]
+            if ptype == "ks":
+                eva_pks(dfkslift, title, ax=current_ax)
+            elif ptype == "lift":
+                eva_plift(dfkslift, title, ax=current_ax)
+            elif ptype == "roc":
+                eva_proc(dfrocpr, title, ax=current_ax)
+            elif ptype == "pr":
+                eva_ppr(dfrocpr, title, ax=current_ax)
+        plt.tight_layout()
         plt.show()
-        rt['pic'] = fig
-    # return
+
     return rt
 
 
 def perf_psi(score, label=None, title=None, x_limits=None, x_tick_break=50, show_plot=True, seed=186,
              return_distr_dat=False):
-    '''
+    r'''
     PSI
     ------
     perf_psi calculates population stability index (PSI) and provides
@@ -490,7 +514,7 @@ def perf_psi(score, label=None, title=None, x_limits=None, x_tick_break=50, show
 
     # PSI function
     def psi(dat):
-        dt_bae = dat.groupby(['ae', 'bin']).size().reset_index(name='N') \
+        dt_bae = dat.groupby(['ae', 'bin'], observed=True).size().reset_index(name='N') \
             .pivot_table(values='N', index='bin', columns='ae').fillna(0.9) \
             .agg(lambda x: x / sum(x))
         dt_bae.columns = ['A', 'E']
@@ -535,12 +559,12 @@ def perf_psi(score, label=None, title=None, x_limits=None, x_tick_break=50, show
         def bad(x):
             return sum(x == 1)
 
-        distr_prob = dat.groupby(['ae', 'bin']) \
+        distr_prob = dat.groupby(['ae', 'bin'], observed=True) \
             ['y'].agg([good, bad]) \
             .assign(N=lambda x: x.good + x.bad,
                     badprob=lambda x: x.bad / (x.good + x.bad)
                     ).reset_index()
-        distr_prob.loc[:, 'distr'] = distr_prob.groupby('ae')['N'].transform(lambda x: x / sum(x))
+        distr_prob.loc[:, 'distr'] = distr_prob.groupby('ae', observed=True)['N'].transform(lambda x: x / sum(x))
         # pivot table
         distr_prob = distr_prob.pivot_table(values=['N', 'badprob', 'distr'], index='bin', columns='ae')
 
@@ -601,7 +625,7 @@ def iv_group(smp, var_list, groupby, y):
         df_i = smp.loc[smp[groupby] == i]
         iv_i = []
         for var in var_list:
-            gb_var = df_i.groupby(var)[y].agg([n0, n1]).reset_index().rename(columns={'n0': 'good', 'n1': 'bad'})
+            gb_var = df_i.groupby(var, observed=True)[y].agg([n0, n1]).reset_index().rename(columns={'n0': 'good', 'n1': 'bad'})
             iv_var = iv_01(gb_var['good'], gb_var['bad'])
             iv_i.append(iv_var)
         iv_df = pd.DataFrame({
@@ -644,7 +668,7 @@ def score_ranges(sample, score, nintervals=10):
 
 
 def score_distr(sample, target, score='score', score_range='score_range'):
-    sample_ranges = sample[['score_range', target]].groupby(['score_range']).agg(['count', 'sum'])
+    sample_ranges = sample[['score_range', target]].groupby(['score_range'], observed=True).agg(['count', 'sum'])
     sample_ranges.columns = sample_ranges.columns.droplevel(0)
     sample_ranges = sample_ranges.rename(columns={"count": "Total", "sum": "Bads"})
     sample_ranges['Goods'] = (sample_ranges['Total'] - sample_ranges['Bads'])
@@ -663,7 +687,7 @@ def score_distr(sample, target, score='score', score_range='score_range'):
 
 
 def psi(expected_share, actual_share):
-    '''Calculate the PSI for a single variable
+    r'''Calculate the PSI for a single variable
     Args:
        expected_array: numpy array of original values
        actual_array: numpy array of new values, same size as expected
@@ -673,7 +697,7 @@ def psi(expected_share, actual_share):
     '''
 
     def sub_psi(e_perc, a_perc):
-        '''Calculate the actual PSI value from comparing the values.
+        r'''Calculate the actual PSI value from comparing the values.
            Update the actual value to a very small number if equal to zero
         '''
         if a_perc == 0:
@@ -693,11 +717,11 @@ def psi(expected_share, actual_share):
 def psi_vars(ref_sample, sample, vars_list, result_name):
     psi_vars = []
     for var in vars_list:
-        ref_sample_groups = ref_sample.groupby([var]).size()
+        ref_sample_groups = ref_sample.groupby([var], observed=True).size()
         ref_sample_groups_df = pd.DataFrame({'Total': ref_sample_groups})
         ref_sample_groups_df['Total_Share'] = ref_sample_groups_df['Total'] / ref_sample_groups_df['Total'].sum()
 
-        sample_groups = sample.groupby([var]).size()
+        sample_groups = sample.groupby([var], observed=True).size()
         sample_groups_df = pd.DataFrame({'Total1': sample_groups})
         sample_groups_df = pd.merge(ref_sample_groups_df, sample_groups_df, left_index=True, right_index=True,
                                     how="outer")

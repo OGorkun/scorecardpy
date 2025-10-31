@@ -1,3 +1,7 @@
+# scorecardpy 1.1
+* all warnings for pandas 2.2.2 fixed
+* code refactoring with GitHub Copilot
+
 # scorecardpy 1.0
 * customized working version
 

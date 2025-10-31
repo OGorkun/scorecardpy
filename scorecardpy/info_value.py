@@ -1,172 +1,102 @@
 # -*- coding: utf-8 -*-
-
 import pandas as pd
 import numpy as np
-from .condition_fun import *
+from .condition_fun import check_y, x_variable  # ensure these exist
 
 
 def iv(dt, y, x=None, positive='bad|1', order=True):
-    '''
-    Information Value
-    ------
-    This function calculates information value (IV) for multiple x variables. 
-    It treats each unique x value as a group and counts the number of y 
-    classes. If there is a zero number of y class, it will be replaced by 
-    0.99 to make sure it calculable.
-    
-    Params
-    ------
-    dt: A data frame with both x (predictor/feature) and 
-      y (response/label) variables.
-    y: Name of y variable.
-    x: Name of x variables. Default is NULL. If x is NULL, then 
-      all variables except y are counted as x variables.
-    positive: Value of positive class, default is "bad|1".
-    order: Logical, default is TRUE. If it is TRUE, the output 
-      will descending order via iv.
-    
-    Returns
-    ------
-    DataFrame
-        Information Value
-    
-    Examples
-    ------
-    import scorecardpy as sc
-    
-    # load data
-    dat = sc.germancredit()
-    
-    # information values
-    dt_info_value = sc.iv(dat, y = "creditability")
-    '''
-    
+    """
+    Calculate Information Value (IV) for multiple features.
+    """
     dt = dt.copy(deep=True)
+
+    # Normalize input types
     if isinstance(y, str):
         y = [y]
-    if isinstance(x, str) and x is not None:
+    if isinstance(x, str):
         x = [x]
-    if x is not None: 
-        dt = dt[y+x]
-    # remove date/time col
-#    dt = rmcol_datetime_unique1(dt)
-    # replace "" by NA
-#    dt = rep_blank_na(dt)
-    # check y
+
+    # Keep only relevant columns
+    if x is not None:
+        dt = dt[y + x]
+
+    # Standardize target variable
     dt = check_y(dt, y, positive)
-    # x variable names
+
+    # Identify predictor variables
     xs = x_variable(dt, y, x)
-    # info_value
-    ivlist = pd.DataFrame({
-        'variable': xs,
-        'info_value': [iv_xy(dt[i], dt[y[0]]) for i in xs]
-    }, columns=['variable', 'info_value'])
-    # sorting iv
-    if order: 
-        ivlist = ivlist.sort_values(by='info_value', ascending=False)
-    return ivlist
-# ivlist = iv(dat, y='creditability')
 
-#' @import data.table
+    # Calculate IV for each variable
+    iv_list = [
+        {"variable": col, "info_value": iv_xy(dt[col], dt[y[0]])}
+        for col in xs
+    ]
+
+    iv_df = pd.DataFrame(iv_list)
+
+    # Sort descending by IV
+    if order:
+        iv_df = iv_df.sort_values("info_value", ascending=False)
+
+    return iv_df
+
+
 def iv_xy(x, y):
-    # good bad func
-    def goodbad(df):
-        names = {'good': (df['y']==0).sum(),'bad': (df['y']==1).sum()}
-        return pd.Series(names)
-    # iv calculation
-    iv_total = pd.DataFrame({'x':x.astype('str'),'y':y}) \
-      .fillna('missing') \
-      .groupby('x') \
-      .apply(goodbad) \
-      .replace(0, 0.9) \
-      .assign(
-        DistrBad = lambda x: x.bad/sum(x.bad),
-        DistrGood = lambda x: x.good/sum(x.good)
-      ) \
-      .assign(iv = lambda x: (x.DistrBad-x.DistrGood)*np.log(x.DistrBad/x.DistrGood)) \
-      .iv.sum()
-    # return iv
-    return iv_total
+    """Calculate IV for a single variable vs binary target."""
+    df = pd.DataFrame({"x": x, "y": y}).fillna("missing")
+    df["x"] = df["x"].astype("string")
 
-# print(iv_xy(x,y))
+    # Group and count
+    counts = df.groupby(["x", "y"], observed=True).size().unstack(fill_value=0)
+    if counts.shape[1] == 1:  # if only one class exists
+        counts = counts.assign(**{1 - counts.columns[0]: 0})
+    counts.columns = ["good", "bad"] if 0 in counts.columns else ["bad", "good"]
+
+    # Avoid division by zero
+    counts = counts.replace(0, 1e-6)
+
+    # Compute distributions
+    total_good = counts["good"].sum()
+    total_bad = counts["bad"].sum()
+    counts["DistrGood"] = counts["good"] / total_good
+    counts["DistrBad"] = counts["bad"] / total_bad
+
+    # IV calculation
+    counts["iv"] = (counts["DistrBad"] - counts["DistrGood"]) * np.log(
+        counts["DistrBad"] / counts["DistrGood"]
+    )
+
+    return counts["iv"].sum()
 
 
-# #' Information Value
-# #'
-# #' calculating IV of total based on good and bad vectors
-# #'
-# #' @param good vector of good numbers
-# #' @param bad vector of bad numbers
-# #'
-# #' @examples
-# #' # iv_01(good, bad)
-# #' dtm = melt(dt, id = 'creditability')[, .(
-# #' good = sum(creditability=="good"), bad = sum(creditability=="bad")
-# #' ), keyby = c("variable", "value")]
-# #'
-# #' dtm[, .(iv = lapply(.SD, iv_01, bad)), by="variable", .SDcols# ="good"]
-# #'
-# #' @import data.table
-#' @import data.table
-#'
 def iv_01(good, bad):
-    # iv calculation
-    iv_total = pd.DataFrame({'good':good,'bad':bad}) \
-      .replace(0, 0.9) \
-      .assign(
-        DistrBad = lambda x: x.bad/sum(x.bad),
-        DistrGood = lambda x: x.good/sum(x.good)
-      ) \
-      .assign(iv = lambda x: (x.DistrBad-x.DistrGood)*np.log(x.DistrBad/x.DistrGood)) \
-      .iv.sum()
-    # return iv
-    return iv_total
+    """Calculate total IV from good/bad counts."""
+    df = pd.DataFrame({"good": good, "bad": bad}).replace(0, 1e-6)
+    total_good = df["good"].sum()
+    total_bad = df["bad"].sum()
+    df["DistrGood"] = df["good"] / total_good
+    df["DistrBad"] = df["bad"] / total_bad
+    df["iv"] = (df["DistrBad"] - df["DistrGood"]) * np.log(df["DistrBad"] / df["DistrGood"])
+    return df["iv"].sum()
 
 
-# #' miv_01
-# #'
-# #' calculating IV of each bin based on good and bad vectors
-# #'
-# #' @param good vector of good numbers
-# #' @param bad vector of bad numbers
-# #'
-# #' @import data.table
-# #'
-#' @import data.table
-#'
 def miv_01(good, bad):
-    # iv calculation
-    infovalue = pd.DataFrame({'good':good,'bad':bad}) \
-      .replace(0, 0.9) \
-      .assign(
-        DistrBad = lambda x: x.bad/sum(x.bad),
-        DistrGood = lambda x: x.good/sum(x.good)
-      ) \
-      .assign(iv = lambda x: (x.DistrBad-x.DistrGood)*np.log(x.DistrBad/x.DistrGood)) \
-      .iv
-    # return iv
-    return infovalue
+    """Return IV per bin."""
+    df = pd.DataFrame({"good": good, "bad": bad}).replace(0, 1e-6)
+    total_good = df["good"].sum()
+    total_bad = df["bad"].sum()
+    df["DistrGood"] = df["good"] / total_good
+    df["DistrBad"] = df["bad"] / total_bad
+    df["iv"] = (df["DistrBad"] - df["DistrGood"]) * np.log(df["DistrBad"] / df["DistrGood"])
+    return df["iv"]
 
 
-# #' woe_01
-# #'
-# #' calculating WOE of each bin based on good and bad vectors
-# #'
-# #' @param good vector of good numbers
-# #' @param bad vector of bad numbers
-# #'
-# #' @import data.table
-#' @import data.table
-#'
 def woe_01(good, bad):
-    # woe calculation
-    woe = pd.DataFrame({'good':good,'bad':bad}) \
-      .replace(0, 0.9) \
-      .assign(
-        DistrBad = lambda x: x.bad/sum(x.bad),
-        DistrGood = lambda x: x.good/sum(x.good)
-      ) \
-      .assign(woe = lambda x: np.log(x.DistrGood/x.DistrBad)) \
-      .woe
-    # return woe
-    return woe
+    """Calculate WOE (Weight of Evidence) for each bin."""
+    df = pd.DataFrame({"good": good, "bad": bad}).replace(0, 1e-6)
+    total_good = df["good"].sum()
+    total_bad = df["bad"].sum()
+    df["DistrGood"] = df["good"] / total_good
+    df["DistrBad"] = df["bad"] / total_bad
+    df["woe"] = np.log(df["DistrGood"] / df["DistrBad"])
+    return df["woe"]
