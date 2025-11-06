@@ -139,10 +139,14 @@ def check_breaks_list(breaks_list, xs):
     if breaks_list is None:
         return None
     if isinstance(breaks_list, str):
+        # Normalize representation
         breaks_list = breaks_list.replace("[inf]", "[np.inf]")
-        breaks_list = ast.literal_eval(breaks_list)
+        # Safe evaluation allowing only numpy
+        breaks_list = eval(breaks_list, {"np": np, "__builtins__": {}})
     if not isinstance(breaks_list, dict):
         raise TypeError("`breaks_list` must be a dictionary.")
+    # Filter to only xs variables
+    breaks_list = {k: v for k, v in breaks_list.items() if k in xs}
     return breaks_list
 
 

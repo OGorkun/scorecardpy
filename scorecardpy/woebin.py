@@ -802,7 +802,7 @@ def bins_to_breaks(bins, dt, to_string=False, save_string=None):
         if save_string is not None:
             brk_lst_name = save_string
             with open(brk_lst_name, 'w') as f:
-                f.write(bins_breakslist)
+                f.write(bins_breakslist.replace("inf", "float('inf')"))
             print('[INFO] The breaks_list is saved as {}'.format(brk_lst_name))
             return 
     return bins_breakslist

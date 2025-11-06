@@ -10,7 +10,8 @@ from .woebin import (
 )
 from .perf import (
     perf_eva, perf_psi, iv_group, gini_vars, gini_over_time,
-    score_ranges, score_distr, psi, psi_vars, psi_over_time
+    score_ranges, score_distr, psi, psi_vars, psi_over_time,
+    performance_testing
 )
 from .scorecard import scorecard, scorecard_ply
 from .one_hot import one_hot
@@ -28,6 +29,7 @@ __all__ = [
     "woebin", "woebin_ply", "woebin_plot", "woebin_adj", "vars_iv", "vars_filter",
     "perf_eva", "perf_psi", "iv_group", "gini_vars", "gini_over_time",
     "score_ranges", "score_distr", "psi", "psi_vars", "psi_over_time",
+    "performance_testing",
     "scorecard", "scorecard_ply",
     "one_hot",
     "miss_heatmap", "expl_analysis", "nan_treatment", "var_distr", "hhi",

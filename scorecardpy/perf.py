@@ -12,7 +12,10 @@ import warnings
 from .condition_fun import check_y
 from .info_value import iv_01
 from .woebin import n0, n1
+from .calibration import pd_from_score
+from .extension import hhi
 from sklearn.metrics import roc_auc_score
+from pathlib import Path
 
 
 # ==========================================================
@@ -652,8 +655,8 @@ def gini_over_time(sample, target, vars_list, date):
     for i in sorted_date:
         sample_date = sample.loc[sample[date] == i]
         gini_date = gini_vars(sample_date, target, vars_list, i)
-        gini_date = gini_date.rename(columns={"Variable": "Period"})
-        gini_date = gini_date.set_index('Period').T
+        gini_date = gini_date.rename(columns={"Variable": date})
+        gini_date = gini_date.set_index(date).T
         gini_ot = pd.concat([gini_ot, gini_date])
     return gini_ot
 
@@ -746,3 +749,223 @@ def psi_over_time(ref_sample, sample, vars_list, date):
         psi_date = psi_date.set_index(date).T
         psi_ot = pd.concat([psi_ot, psi_date])
     return psi_ot
+
+
+def get_value_counts_by_date(df, vars_woe, date_col):
+    """
+    Compute counts by variable and date.
+
+    Returns:
+        DataFrame with columns:
+        var_name | date | var_value | cnt
+    """
+    results = []
+    for v in vars_woe:
+        temp = (
+            df.groupby([date_col, v])
+              .size()
+              .reset_index(name='cnt')
+              .rename(columns={v: 'var_value', date_col: 'date'})
+        )
+        temp["var_name"] = v
+        results.append(temp)
+    return pd.concat(results, ignore_index=True)[["var_name", "date", "var_value", "cnt"]]
+
+
+def performance_testing(
+    smp_testing_outcome,
+    smp_testing,
+    train_score,
+    train_woe,
+    vars_woe,
+    target,
+    date_col,
+    test_score=None,
+    test_woe=None,
+    score_col='score',
+    output_path="7_1_testing_results.xlsx",
+    groupby_col=None
+):
+    """
+    Compute and export model testing performance summary to Excel.
+
+    Parameters
+    ----------
+    smp_testing_outcome : pd.DataFrame
+        Full testing sample with actuals and scores.
+    smp_testing : pd.DataFrame
+        Testing sample (full) with same score/rating columns.
+    train_score : pd.DataFrame
+        Train sample with scores.
+    train_woe : pd.DataFrame
+        Train dataset with WOE-transformed variables.
+    vars_woe : list
+        List of WOE variable names.
+    target : str
+        Target variable name.
+    date_col : str
+        Date column name.
+    test_score : pd.DataFrame, optional
+        Test sample with scores. Default is None.
+    test_woe : pd.DataFrame, optional
+        Test dataset with WOE-transformed variables. Default is None.
+    score_col : str, default 'score'
+        Score column name.
+    output_path : str, default '7_1_testing_results.xlsx'
+        Path to Excel output file.
+    groupby_col : str, optional
+        Column name in smp_testing_outcome and smp_testing to split analysis by.
+    """
+
+    # --- Helper to process one subset ---
+    def _run_for_subset(sub_outcome, sub_testing, group_value=None):
+        sub_outcome = sub_outcome.copy()
+        sub_testing = sub_testing.copy()
+
+        # 1. PDs and Gini over time
+        sub_outcome["pd"] = pd_from_score(sub_outcome[score_col])
+        gini_ot = (
+            sub_outcome
+            .groupby(date_col)
+            .agg(
+                Total=(target, "count"),
+                Bads=(target, "sum"),
+                Avg_PD=("pd", "mean")
+            )
+            .reset_index()
+        )
+        gini_ot["Bad Rate"] = gini_ot["Bads"] / gini_ot["Total"]
+        gini_df = gini_over_time(sub_outcome, target, [score_col], date_col).reset_index()
+        gini_ot["Gini"] = gini_df[score_col]
+
+        if group_value is not None:
+            gini_ot[groupby_col] = group_value
+
+        # 2. Variable Ginies
+        if test_woe is not None and not test_woe.empty:
+            gini_vars_train = gini_vars(train_woe, target, vars_woe, "Train")
+            gini_vars_test = gini_vars(test_woe, target, vars_woe, "Test")
+            gini_vars_train_test = pd.merge(gini_vars_train, gini_vars_test, on="Variable")
+        else:
+            gini_vars_train_test = None
+
+        gini_vars_ot = gini_over_time(sub_outcome, target, vars_woe, date_col)
+        if group_value is not None:
+            gini_vars_ot[groupby_col] = group_value
+
+        # 3. Score distributions
+        _, brk = pd.cut(train_score[score_col], bins=10, retbins=True, duplicates="drop")
+        brk = list(
+            filter(
+                lambda x: x > np.nanmin(train_score[score_col])
+                and x < np.nanmax(train_score[score_col]),
+                brk.round(2),
+            )
+        )
+        brk = [np.nanmin(sub_testing[score_col])] + sorted(brk) + [np.nanmax(sub_testing[score_col])]
+
+        train_score_local = train_score.copy()
+        train_score_local["score_range"] = pd.cut(train_score_local[score_col], bins=brk, include_lowest=False)
+        sub_testing["score_range"] = pd.cut(sub_testing[score_col], bins=brk, include_lowest=False)
+
+        if test_score is not None and not test_score.empty:
+            test_score_local = test_score.copy()
+            test_score_local["score_range"] = pd.cut(test_score_local[score_col], bins=brk, include_lowest=False)
+            test_distr = score_distr(test_score_local, target, score_col, "score_range")
+        else:
+            test_distr = None
+
+        train_distr = score_distr(train_score_local, target, score_col, "score_range")
+        if group_value is not None:
+            train_distr[groupby_col] = group_value
+            if test_distr is not None:
+                test_distr[groupby_col] = group_value
+
+        # 4. PSI, HHI, DR
+        psi_ot = psi_over_time(train_score_local, sub_testing, ["score_range"], date_col)
+        psi_vars_ot = psi_over_time(train_woe, sub_testing, vars_woe, date_col)
+        distr_vars_ot = get_value_counts_by_date(sub_testing, vars_woe, date_col)
+        hhi_ot = sub_testing.groupby(date_col).agg({"score_range": hhi}).rename(columns={"score_range": "HHI"})
+
+        if group_value is not None:
+            psi_ot[groupby_col] = group_value
+            psi_vars_ot[groupby_col] = group_value
+            distr_vars_ot[groupby_col] = group_value
+            hhi_ot[groupby_col] = group_value
+
+        if test_score is not None and not test_score.empty:
+            train_hhi = hhi(train_score_local["score_range"].astype(str))
+            test_hhi = hhi(test_score_local["score_range"].astype(str))
+            hhi_train_test = pd.DataFrame({"train": [train_hhi], "test": [test_hhi]}, index=["hhi"])
+        else:
+            hhi_train_test = None
+
+        # 5. Ratings
+        bins = [0, 499, 539, 579, 619, 659, 699, 739, 779, 999]
+        labels = ["4.5", "4.0", "3.5", "3.0", "2.5", "2.0", "1.5", "1.0", "0.5"]
+
+        sub_outcome["rating"] = pd.cut(sub_outcome[score_col], bins=bins, labels=labels, include_lowest=True)
+        sub_testing["rating"] = pd.cut(sub_testing[score_col], bins=bins, labels=labels, include_lowest=True)
+
+        DR_rating = (
+            sub_outcome.groupby("rating", observed=True)[target]
+            .agg(["count", "sum"])
+            .rename(columns={"count": "Total", "sum": "Bads"})
+            .assign(DR=lambda d: d["Bads"] / d["Total"])
+            .reset_index()
+        )
+        DR_rating_ot = (
+            sub_testing.groupby([date_col, "rating"], observed=True)[target]
+            .agg(["count", "sum"])
+            .reset_index()
+            .rename(columns={"count": "Total", "sum": "Bads"})
+        )
+        DR_rating_ot["DR"] = DR_rating_ot["Bads"] / DR_rating_ot["Total"]
+
+        if group_value is not None:
+            DR_rating[groupby_col] = group_value
+            DR_rating_ot[groupby_col] = group_value
+
+        return {
+            "gini_ot": gini_ot,
+            "gini_vars_ot": gini_vars_ot,
+            "gini_vars_train_test": gini_vars_train_test,
+            "train_distr": train_distr,
+            "test_distr": test_distr,
+            "psi_ot": psi_ot,
+            "psi_vars_ot": psi_vars_ot,
+            "distr_vars_ot": distr_vars_ot,
+            "hhi_ot": hhi_ot,
+            "hhi_train_test": hhi_train_test,
+            "DR_rating": DR_rating,
+            "DR_rating_ot": DR_rating_ot,
+        }
+
+    # --- Run analysis (with or without grouping) ---
+    if groupby_col and groupby_col in smp_testing_outcome.columns:
+        results_list = []
+        for val in smp_testing_outcome[groupby_col].dropna().unique():
+            subset_out = smp_testing_outcome[smp_testing_outcome[groupby_col] == val]
+            subset_test = smp_testing[smp_testing[groupby_col] == val]
+            res = _run_for_subset(subset_out, subset_test, group_value=val)
+            results_list.append(res)
+
+        # concatenate across groups
+        combined = {}
+        for key in results_list[0].keys():
+            dfs = [r[key] for r in results_list if r[key] is not None]
+            if dfs:
+                combined[key] = pd.concat(dfs, ignore_index=True)
+            else:
+                combined[key] = None
+    else:
+        combined = _run_for_subset(smp_testing_outcome, smp_testing)
+
+    # --- Export results to Excel ---
+    output_path = Path(output_path)
+    with pd.ExcelWriter(output_path, engine="xlsxwriter") as writer:
+        for sheet, df in combined.items():
+            if df is not None and not df.empty:
+                df.to_excel(writer, sheet_name=sheet, index=False)
+
+    print(f"✅ Performance results exported to: {output_path.resolve()}")
