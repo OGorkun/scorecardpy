@@ -1598,7 +1598,7 @@ def vars_iv(bins):
     return vars_iv.sort_values('iv', ascending=False).reset_index(drop=True)
 
 
-def vars_filter(dt, bins, corr_threshold=0.7, iv_threshold=0.02, save_to='3_4_rejected_vars_fine_classing.xlsx'):
+def vars_filter(dt, bins, corr_threshold=0.7, iv_threshold=0.02):
     # IV for each variable
     bins_iv = vars_iv(bins)
     bins_iv = bins_iv.set_index(bins_iv['variable']+'_woe')
@@ -1632,5 +1632,4 @@ def vars_filter(dt, bins, corr_threshold=0.7, iv_threshold=0.02, save_to='3_4_re
             excl_corr.append(excl_corr_i)
     excl_all = pd.concat(excl_corr)
     excl_all = pd.concat([excl_all, excl_iv], axis=0, ignore_index=True)
-    excl_all.to_excel(save_to)
     return var_list, excl_all
