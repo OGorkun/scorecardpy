@@ -20,6 +20,7 @@ from .extension import (
     miss_heatmap, expl_analysis, nan_treatment, var_distr, hhi
 )
 from .calibration import pd_from_score, calibration
+from .LogisticRegStats import LogisticRegStats
 
 __version__ = "1.0"
 
@@ -34,4 +35,5 @@ __all__ = [
     "one_hot",
     "miss_heatmap", "expl_analysis", "nan_treatment", "var_distr", "hhi",
     "pd_from_score", "calibration",
+    "LogisticRegStats",
 ]
