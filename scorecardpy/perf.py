@@ -779,26 +779,25 @@ def get_value_counts_by_date(df, vars_woe, date_col):
 
     Returns:
         DataFrame with columns:
-        var_name | date | var_value | cnt
+        var_name | date | var_value | Total
     """
     results = []
     for v in vars_woe:
         temp = (
             df.groupby([date_col, v])
               .size()
-              .reset_index(name='cnt')
+              .reset_index(name='Total')
               .rename(columns={v: 'var_value'})
         )
         # preserve original date_col name (no conversion)
         temp = temp.rename(columns={date_col: date_col})
         temp["var_name"] = v
         results.append(temp)
-    out = pd.concat(results, ignore_index=True)[[date_col, "var_name", "var_value", "cnt"]]
+    out = pd.concat(results, ignore_index=True)[[date_col, "var_name", "var_value", "Total"]]
     return out
 
 
 def performance_testing(
-    smp_testing_outcome,
     smp_testing,
     train_score,
     train_woe,
@@ -809,7 +808,8 @@ def performance_testing(
     test_woe=None,
     score_col='score',
     output_path="7_1_testing_results.xlsx",
-    groupby_col=None
+    groupby_col=None,
+    outcome_period=12,
 ):
     """
     Compute and export model testing performance summary to Excel.
@@ -842,32 +842,42 @@ def performance_testing(
         Column name in smp_testing_outcome and smp_testing to split analysis by.
     """
 
+    # derive outcome sample by excluding the last `outcome_period` periods (based on date_col)
+    unique_dates = sorted(smp_testing[date_col].dropna().unique())
+    if len(unique_dates) > outcome_period:
+        outcome_dates = unique_dates[:-outcome_period]
+    else:
+        outcome_dates = []
+    smp_testing_outcome = smp_testing[smp_testing[date_col].isin(outcome_dates)].copy()
+
     # --- Helper to process one subset ---
     def _run_for_subset(sub_outcome, sub_testing, group_value=None):
         sub_outcome = sub_outcome.copy()
         sub_testing = sub_testing.copy()
-
         # 1. PDs and Gini over time
-        sub_outcome["pd"] = pd_from_score(sub_outcome[score_col])
-        gini_ot = (
-            sub_outcome
-            .groupby(date_col)
-            .agg(
-                Total=(target, "count"),
-                Bads=(target, "sum"),
-                Avg_PD=("pd", "mean")
+        if not sub_outcome.empty:
+            sub_outcome["pd"] = pd_from_score(sub_outcome[score_col])
+            gini_ot = (
+                sub_outcome
+                .groupby(date_col)
+                .agg(
+                    Total=(target, "count"),
+                    Bads=(target, "sum"),
+                    Avg_PD=("pd", "mean")
+                )
+                .reset_index()
             )
-            .reset_index()
-        )
-        gini_ot["Bad Rate"] = gini_ot["Bads"] / gini_ot["Total"]
-        gini_df = gini_over_time(sub_outcome, target, [score_col], date_col)
-        # gini_df has columns [date_col, 'Variable', 'Gini']
-        try:
-            gini_map = gini_df.loc[gini_df['Variable'] == score_col].set_index(date_col)['Gini']
-            gini_ot['Gini'] = gini_ot[date_col].map(gini_map)
-        except Exception:
-            # fallback: create empty column if mapping fails
-            gini_ot['Gini'] = np.nan
+            gini_ot["Bad Rate"] = gini_ot["Bads"] / gini_ot["Total"]
+            gini_df = gini_over_time(sub_outcome, target, [score_col], date_col)
+            # gini_df has columns [date_col, 'Variable', 'Gini']
+            try:
+                gini_map = gini_df.loc[gini_df['Variable'] == score_col].set_index(date_col)['Gini']
+                gini_ot['Gini'] = gini_ot[date_col].map(gini_map)
+            except Exception:
+                gini_ot['Gini'] = np.nan
+        else:
+            # empty outcome window -> return empty gini_ot with expected columns
+            gini_ot = pd.DataFrame(columns=[date_col, "Total", "Bads", "Avg_PD", "Bad Rate", "Gini"])
 
         if group_value is not None:
             gini_ot[groupby_col] = group_value
@@ -915,7 +925,34 @@ def performance_testing(
         # 4. PSI, HHI, DR
         psi_ot = psi_over_time(train_score_local, sub_testing, ["score_range"], date_col)
         psi_vars_ot = psi_over_time(train_woe, sub_testing, vars_woe, date_col)
-        distr_vars_ot = get_value_counts_by_date(sub_testing, vars_woe, date_col)
+
+        distr_total = get_value_counts_by_date(sub_testing, vars_woe, date_col)
+        outcome_bads_list = []
+        for v in vars_woe:
+            if not sub_outcome.empty:
+                temp = (
+                    sub_outcome.groupby([date_col, v], observed=True)[target]
+                    .sum()
+                    .reset_index(name='Bads')
+                    .rename(columns={v: 'var_value'})
+                )
+                temp['var_name'] = v
+                outcome_bads_list.append(temp)
+        if outcome_bads_list:
+            outcome_bads = pd.concat(outcome_bads_list, ignore_index=True)
+        else:
+            outcome_bads = pd.DataFrame(columns=[date_col, 'var_value', 'Bads', 'var_name'])
+
+        distr = pd.merge(
+            distr_total,
+            outcome_bads,
+            how='left',
+            on=[date_col, 'var_name', 'var_value']
+        )
+        distr['Bad Rate'] = distr['Bads'] / distr['Total']
+        # reorder columns: date first, then var_name, var_value, Total, Bads, Bad Rate
+        distr_vars_ot = distr[[date_col, 'var_name', 'var_value', 'Total', 'Bads', 'Bad Rate']]
+
         hhi_ot = (
             sub_testing.groupby(date_col)
             .agg({"score_range": hhi})
