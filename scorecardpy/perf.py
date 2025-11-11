@@ -649,16 +649,28 @@ def gini_vars(sample, target, vars_list, result_name):
 
 
 def gini_over_time(sample, target, vars_list, date):
-    sorted_date = sorted(sample[date].unique())
-    # del sorted_date[-12:]
-    gini_ot = pd.DataFrame([])
-    for i in sorted_date:
-        sample_date = sample.loc[sample[date] == i]
-        gini_date = gini_vars(sample_date, target, vars_list, i)
-        gini_date = gini_date.rename(columns={"Variable": date})
-        gini_date = gini_date.set_index(date).T
-        gini_ot = pd.concat([gini_ot, gini_date])
-    return gini_ot
+    """
+    Compute variable Gini over time and return a long-form DataFrame.
+
+    Returns a DataFrame with columns: [date_col, 'Variable', 'Gini'] where
+    date_col is the original column name passed in `date`. Values are
+    preserved (no conversion) and appear in the same order as sorted unique
+    values of the date column.
+    """
+    sorted_date = sorted(sample[date].dropna().unique())
+    rows = []
+    for dt in sorted_date:
+        sample_date = sample.loc[sample[date] == dt]
+        gv = gini_vars(sample_date, target, vars_list, "Gini")
+        # gv: columns ['Variable', 'Gini']
+        gv = gv.copy()
+        gv[date] = dt
+        # keep original date column name first
+        rows.append(gv[[date, 'Variable', 'Gini']])
+    if rows:
+        return pd.concat(rows, ignore_index=True)
+    else:
+        return pd.DataFrame(columns=[date, 'Variable', 'Gini'])
 
 
 def score_ranges(sample, score, nintervals=10):
@@ -740,15 +752,25 @@ def psi_vars(ref_sample, sample, vars_list, result_name):
 
 
 def psi_over_time(ref_sample, sample, vars_list, date):
-    sorted_date = sorted(sample[date].unique())
-    psi_ot = pd.DataFrame([])
-    for i in sorted_date:
-        sample_date = sample.loc[sample[date] == i]
-        psi_date = psi_vars(ref_sample, sample_date, vars_list, i)
-        psi_date = psi_date.rename(columns={"Variable": date})
-        psi_date = psi_date.set_index(date).T
-        psi_ot = pd.concat([psi_ot, psi_date])
-    return psi_ot
+    """
+    Compute PSI over time and return a long-form DataFrame.
+
+    Returns columns: [date_col, 'Variable', '<result_name>'] where result_name
+    is the column name produced by `psi_vars` (we standardize it to 'PSI').
+    """
+    sorted_date = sorted(sample[date].dropna().unique())
+    rows = []
+    for dt in sorted_date:
+        sample_date = sample.loc[sample[date] == dt]
+        pv = psi_vars(ref_sample, sample_date, vars_list, 'PSI')
+        pv = pv.copy()
+        # pv columns: ['Variable', 'PSI']
+        pv[date] = dt
+        rows.append(pv[[date, 'Variable', 'PSI']])
+    if rows:
+        return pd.concat(rows, ignore_index=True)
+    else:
+        return pd.DataFrame(columns=[date, 'Variable', 'PSI'])
 
 
 def get_value_counts_by_date(df, vars_woe, date_col):
@@ -765,11 +787,14 @@ def get_value_counts_by_date(df, vars_woe, date_col):
             df.groupby([date_col, v])
               .size()
               .reset_index(name='cnt')
-              .rename(columns={v: 'var_value', date_col: 'date'})
+              .rename(columns={v: 'var_value'})
         )
+        # preserve original date_col name (no conversion)
+        temp = temp.rename(columns={date_col: date_col})
         temp["var_name"] = v
         results.append(temp)
-    return pd.concat(results, ignore_index=True)[["var_name", "date", "var_value", "cnt"]]
+    out = pd.concat(results, ignore_index=True)[[date_col, "var_name", "var_value", "cnt"]]
+    return out
 
 
 def performance_testing(
@@ -835,8 +860,14 @@ def performance_testing(
             .reset_index()
         )
         gini_ot["Bad Rate"] = gini_ot["Bads"] / gini_ot["Total"]
-        gini_df = gini_over_time(sub_outcome, target, [score_col], date_col).reset_index()
-        gini_ot["Gini"] = gini_df[score_col]
+        gini_df = gini_over_time(sub_outcome, target, [score_col], date_col)
+        # gini_df has columns [date_col, 'Variable', 'Gini']
+        try:
+            gini_map = gini_df.loc[gini_df['Variable'] == score_col].set_index(date_col)['Gini']
+            gini_ot['Gini'] = gini_ot[date_col].map(gini_map)
+        except Exception:
+            # fallback: create empty column if mapping fails
+            gini_ot['Gini'] = np.nan
 
         if group_value is not None:
             gini_ot[groupby_col] = group_value
@@ -885,7 +916,12 @@ def performance_testing(
         psi_ot = psi_over_time(train_score_local, sub_testing, ["score_range"], date_col)
         psi_vars_ot = psi_over_time(train_woe, sub_testing, vars_woe, date_col)
         distr_vars_ot = get_value_counts_by_date(sub_testing, vars_woe, date_col)
-        hhi_ot = sub_testing.groupby(date_col).agg({"score_range": hhi}).rename(columns={"score_range": "HHI"})
+        hhi_ot = (
+            sub_testing.groupby(date_col)
+            .agg({"score_range": hhi})
+            .rename(columns={"score_range": "HHI"})
+            .reset_index()
+        )
 
         if group_value is not None:
             psi_ot[groupby_col] = group_value
