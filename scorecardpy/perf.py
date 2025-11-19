@@ -895,23 +895,114 @@ def performance_testing(
             gini_vars_ot[groupby_col] = group_value
 
         # 3. Score distributions
-        _, brk = pd.cut(train_score[score_col], bins=10, retbins=True, duplicates="drop")
-        brk = list(
-            filter(
-                lambda x: x > np.nanmin(train_score[score_col])
-                and x < np.nanmax(train_score[score_col]),
-                brk.round(2),
-            )
-        )
-        brk = [np.nanmin(sub_testing[score_col])] + sorted(brk) + [np.nanmax(sub_testing[score_col])]
+        # Build robust bin edges based on train_score but adapted to sub_testing
+        def _build_bins(train_ser, sub_ser, n_bins=10):
+            """Return monotonic, unique bin edges to be used with pd.cut.
 
-        train_score_local = train_score.copy()
-        train_score_local["score_range"] = pd.cut(train_score_local[score_col], bins=brk, include_lowest=False)
-        sub_testing["score_range"] = pd.cut(sub_testing[score_col], bins=brk, include_lowest=False)
+            Tries to reuse breakpoints from train_ser, but clips and deduplicates
+            them to the range of sub_ser. Returns None if bins cannot be built
+            (e.g., sub_ser has constant values).
+            """
+            if train_ser.dropna().empty:
+                warnings.warn("train_score is empty; cannot build bins.")
+                return None, ["train_empty"]
+            if sub_ser.dropna().empty:
+                return None, ["sub_empty"]
+
+            tmin = float(np.nanmin(train_ser))
+            tmax = float(np.nanmax(train_ser))
+            smin = float(np.nanmin(sub_ser))
+            smax = float(np.nanmax(sub_ser))
+
+            if smin == smax:
+                return None, ["sub_constant"]
+
+            # get candidate breakpoints from train
+            try:
+                _, cand = pd.cut(train_ser, bins=n_bins, retbins=True, duplicates="drop")
+            except Exception:
+                cand = np.linspace(tmin, tmax, n_bins + 1)
+
+            # filter cand to be strictly within train min/max
+            cand_filt = [float(x) for x in cand if x > tmin and x < tmax]
+
+            # final edges: start at sub min, include filtered candidates within sub range, end at sub max
+            mid = [x for x in sorted(set(cand_filt)) if x > smin and x < smax]
+            edges = [smin] + mid + [smax]
+
+            # ensure strictly increasing and unique
+            edges_arr = np.array(sorted(set(edges)), dtype=float)
+            if len(edges_arr) < 2:
+                return None, ["insufficient_edges"]
+            # check monotonic
+            if not np.all(np.diff(edges_arr) > 0):
+                edges_arr = np.unique(edges_arr)
+                if not np.all(np.diff(edges_arr) > 0):
+                    return None, ["non_monotonic"]
+
+            # collect warnings about dropped cand points
+            dropped = []
+            orig_cand_set = set(float(x) for x in cand)
+            for x in cand:
+                fx = float(x)
+                if not (smin < fx < smax):
+                    dropped.append(fx)
+
+            info = []
+            if dropped:
+                info.append(f"dropped_train_breaks_outside_sub_range:{sorted(dropped)}")
+
+            return list(edges_arr), info
+
+        bins, bin_warnings = _build_bins(train_score[score_col], sub_testing[score_col], n_bins=10)
+        if bins is None:
+            # Fallbacks: if sub_testing constant, create one interval by setting score_range to the value
+            reason = bin_warnings[0] if bin_warnings else 'unknown'
+            warnings.warn(f"Could not build bins for group {group_value!s}: {reason}. "
+                          "Falling back to a single-value score_range.")
+            train_score_local = train_score.copy()
+            # represent constant range as the literal value for score_range
+            if reason == 'sub_constant':
+                const_val = sub_testing[score_col].iloc[0]
+                train_score_local['score_range'] = str(const_val)
+                sub_testing['score_range'] = sub_testing[score_col].apply(lambda x: str(x))
+            else:
+                train_score_local['score_range'] = train_score_local[score_col]
+                sub_testing['score_range'] = sub_testing[score_col]
+        else:
+            # use include_lowest=True so min values are included
+            train_score_local = train_score.copy()
+            try:
+                train_score_local["score_range"] = pd.cut(train_score_local[score_col], bins=bins, include_lowest=True)
+                sub_testing["score_range"] = pd.cut(sub_testing[score_col], bins=bins, include_lowest=True)
+                if bin_warnings:
+                    warnings.warn(f"Bin construction warnings for group {group_value!s}: {bin_warnings}")
+            except ValueError as e:
+                # Last-resort attempt: deduplicate and sort bins then retry
+                bins = sorted(set(bins))
+                try:
+                    train_score_local["score_range"] = pd.cut(train_score_local[score_col], bins=bins, include_lowest=True)
+                    sub_testing["score_range"] = pd.cut(sub_testing[score_col], bins=bins, include_lowest=True)
+                except Exception as e2:
+                    warnings.warn(f"pd.cut failed for group {group_value!s}: {e2}. Falling back to raw values in score_range.")
+                    train_score_local['score_range'] = train_score_local[score_col]
+                    sub_testing['score_range'] = sub_testing[score_col]
 
         if test_score is not None and not test_score.empty:
             test_score_local = test_score.copy()
-            test_score_local["score_range"] = pd.cut(test_score_local[score_col], bins=brk, include_lowest=False)
+            # align test_score_local score_range with how train_score_local was created
+            if 'bins' in locals() and bins is not None:
+                try:
+                    test_score_local["score_range"] = pd.cut(test_score_local[score_col], bins=bins, include_lowest=True)
+                except Exception as _e:
+                    warnings.warn(f"pd.cut failed for test_score in group {group_value!s}: {_e}. Falling back to raw values in score_range.")
+                    test_score_local['score_range'] = test_score_local[score_col]
+            else:
+                # bins could not be created; follow the same fallback used for train_score_local
+                if train_score_local['score_range'].dtype == object:
+                    test_score_local['score_range'] = test_score_local[score_col].apply(lambda x: str(x))
+                else:
+                    test_score_local['score_range'] = test_score_local[score_col]
             test_distr = score_distr(test_score_local, target, score_col, "score_range")
         else:
             test_distr = None
