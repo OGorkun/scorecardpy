@@ -1079,13 +1079,33 @@ def woepoints_ply1(dtx, binx, x_i, woe_points):
         # dtx.loc[:,'xi_bin'] = np.where(pd.isnull(dtx['xi_bin']), dtx['xi_bin'], dtx['xi_bin'].astype(str))
         #
         # mask = dtx[x_i].isin(binx_sv['V1'])
-        try:
-            # when binx_sv['V1'] is not int then cast type
-            mask = dtx[x_i].astype('Int64').isin(binx_sv.loc[~binx_sv['V1'].str.isalpha()]['V1'].astype('float').astype('Int64'))
-        except:
-            # if can not cast then use as is
-            mask = dtx[x_i].isin(binx_sv['V1'])
+        # Build a robust mask for special values that handles numeric equivalence
+        # (e.g. -9999 and -9999.0) as the same special value.
+        sv_values = binx_sv['V1'].dropna().unique().tolist()
+        # try to parse numeric special values to float
+        sv_numeric = set()
+        sv_strings = set()
+        for v in sv_values:
+            try:
+                fv = float(str(v))
+                if np.isnan(fv):
+                    sv_strings.add(str(v))
+                else:
+                    sv_numeric.add(fv)
+            except Exception:
+                sv_strings.add(str(v))
 
+        # prepare columns for comparison
+        dtx_vals = dtx[x_i]
+        # numeric parsing of dtx values
+        dtx_num = pd.to_numeric(dtx_vals, errors='coerce')
+        dtx_str = dtx_vals.astype(str)
+
+        mask_numeric = dtx_num.isin(sv_numeric)
+        mask_string = dtx_str.isin(sv_strings)
+        mask = mask_numeric | mask_string
+
+        # assign special-value bin labels (as string)
         dtx.loc[mask,'xi_bin'] = dtx.loc[mask, x_i].astype(str)
         dtx = dtx[['xi_bin']].rename(columns={'xi_bin':x_i})
     ## to charcarter, na to missing
@@ -1403,9 +1423,29 @@ def woebin_adj_break_plot(dt, y, x_i, breaks, sv_i):
     '''
     if breaks == '':
         breaks = None
+    # allow quick syntax to combine special values when adjusting, e.g.
+    # breaks = "sv:-9999,missing" or "sv(-9999,missing)" will set special_values
     breaks_list = None if breaks is None else {x_i: eval('['+breaks+']')}
+    # handle special-values combine syntax embedded in breaks
     special_values = None if sv_i is None else {x_i: sv_i}
-    # binx update
+    if isinstance(breaks, str) and breaks.strip().lower().startswith('sv'):
+        # parse inside parentheses or after colon
+        s = breaks.strip()[2:]
+        s = s.strip(' :()')
+        # split by comma and strip
+        parts = [p.strip() for p in s.split(',') if p.strip()]
+        if parts:
+            # try to convert numeric-looking parts to numbers
+            parsed = []
+            for p in parts:
+                try:
+                    fv = float(p)
+                    # if integer-like, keep as numeric (float)
+                    parsed.append(fv)
+                except Exception:
+                    parsed.append(p)
+            special_values = {x_i: parsed}
+    # binx update: call woebin with provided breaks_list and special_values
     _, bins_adj = woebin(dt[[x_i,y]], y, breaks_list=breaks_list, special_values=special_values)
     
     ## print adjust breaks
