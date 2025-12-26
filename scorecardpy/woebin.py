@@ -1278,7 +1278,6 @@ def plot_bin(binx, title, show_iv):
     width = 0.35       # the width of the bars: can also be len(x) sequence
     ###### plot ###### 
     fig, ax1 = plt.subplots()
-    plt.xticks(rotation=45, horizontalalignment='right', fontweight='light', fontsize=8)
     ax2 = ax1.twinx()
     # ax1
     p1 = ax1.bar(ind, binx['good_distr'], width, color=(24/254, 192/254, 196/254))
@@ -1295,11 +1294,123 @@ def plot_bin(binx, title, show_iv):
     ax1.set_yticks(np.arange(0, y_left_max+0.2, 0.2))
     ax2.set_yticks(np.arange(0, y_right_max+0.2, 0.2))
     ax2.tick_params(axis='y', colors='blue')
-    plt.xticks(ind, binx['bin'])
+    # consistent x-axis label styling
+    ax1.set_xticks(ind)
+    ax1.set_xticklabels(binx['bin'].astype(str), rotation=45, ha='right', fontsize=8, fontweight='light')
+    ax1.tick_params(axis='x', labelsize=8)
     plt.title(title_string, loc='left')
     plt.legend((p2[0], p1[0]), ('bad', 'good'), loc='upper right')
     # show plot 
     # plt.show()
+    return fig
+
+
+def plot_fine_bin(init_bin, title=None, coarse_bins=None):
+    """Plot fine-classing: share of each fine bin and its WOE.
+
+    Expects `init_bin` to contain columns ['bin','good','bad'] or
+    ['bin','count','good','bad']. Computes count_distr and woe.
+    """
+    if init_bin is None or init_bin.empty:
+        warnings.warn("No initial fine-classing data available to plot.")
+        return None
+
+    df = init_bin.copy()
+    if 'count' not in df.columns:
+        df['count'] = df['good'] + df['bad']
+    df['count_distr'] = df['count'] / df['count'].sum()
+    # ensure numeric
+    df['good'] = df['good'].astype(int)
+    df['bad'] = df['bad'].astype(int)
+    # distributions similar to plot_bin: proportions of goods and bads across fine bins
+    total_good = df['good'].sum() if df['good'].sum() != 0 else 1
+    total_bad = df['bad'].sum() if df['bad'].sum() != 0 else 1
+    df['good_distr'] = df['good'] / total_good
+    df['bad_distr'] = df['bad'] / total_bad
+    # bad probability per fine bin
+    df['badprob'] = df['bad'] / df['count'].replace(0, np.nan)
+
+    # plotting: single bars showing total counts per fine bin and bad probability line
+    ind = np.arange(len(df.index))
+    width = 0.6
+    fig, ax1 = plt.subplots()
+    ax2 = ax1.twinx()
+
+    # determine coarse-class membership for fine bins (if coarse_bins provided)
+    group_labels = None
+    if coarse_bins is not None and not coarse_bins.empty:
+        cb = coarse_bins.copy().reset_index(drop=True)
+        cb['_left'] = pd.to_numeric(cb.get('breaks0'), errors='coerce')
+        cb['_right'] = pd.to_numeric(cb.get('breaks'), errors='coerce')
+
+        left_f = pd.to_numeric(df.get('breaks0'), errors='coerce')
+        right_f = pd.to_numeric(df.get('breaks'), errors='coerce')
+        mid = (left_f + right_f) / 2.0
+
+        groups = []
+        for idx, m in enumerate(mid):
+            assigned = None
+            if not pd.isna(m):
+                for j, row in cb.iterrows():
+                    l = row['_left']
+                    r = row['_right']
+                    if (not pd.isna(l) and not pd.isna(r)) and (l <= m <= r):
+                        assigned = j
+                        break
+            if assigned is None:
+                f_break = str(df.loc[idx, 'breaks'])
+                f_break0 = str(df.loc[idx, 'breaks0'])
+                for j, row in cb.iterrows():
+                    if f_break in str(row.get('breaks', '')) or f_break0 in str(row.get('breaks', '')) or str(df.loc[idx, 'bin']) in str(row.get('bin', '')):
+                        assigned = j
+                        break
+            groups.append(-1 if assigned is None else int(assigned))
+        group_labels = groups
+    else:
+        group_labels = [-1] * len(df.index)
+
+    # map groups to colors using a qualitative colormap; group -1 -> gray
+    unique_groups = [g for g in sorted(set(group_labels)) if g != -1]
+    cmap = plt.get_cmap('tab10')
+    palette = {g: cmap(i % 10) for i, g in enumerate(unique_groups)}
+    palette[-1] = (0.8, 0.8, 0.8)
+    colors = [palette[g] for g in group_labels]
+
+    # bars show total counts per fine bin
+    p = ax1.bar(ind, df['count'], width, color=colors, edgecolor='k')
+
+    # annotate count and percent on bars
+    for i in ind:
+        cnt = int(df.loc[i, 'count']) if i in df.index else 0
+        cntd = df.loc[i, 'count_distr'] if i in df.index else 0
+        ax1.text(i, cnt * 1.02, f"{cnt} ({cntd*100:.1f}%)", ha='center', fontsize=8)
+
+    # bad probability line (blue) and annotations
+    ax2.plot(ind, df['badprob'], marker='o', color='blue')
+    for i in ind:
+        bp = df.loc[i, 'badprob'] if i in df.index else np.nan
+        if not pd.isna(bp):
+            ax2.text(i, bp * 1.02, f"{bp*100:.1f}%", color='blue', ha='center', fontsize=8)
+
+    # settings (match `plot_bin` styling where appropriate)
+    ax1.set_ylabel('Bin count')
+    ax2.set_ylabel('Bad probability', color='blue')
+    ax1.set_xticks(ind)
+    ax1.set_xticklabels(df['bin'].astype(str), rotation=45, ha='right', fontsize=8, fontweight='light')
+    ax1.tick_params(axis='x', labelsize=8)
+    title_string = title if title is not None else (df.iloc[0].get('variable', '') if 'variable' in df.columns else '')
+    plt.title(f"Fine classing: {title_string}", loc='left')
+    # add legend for coarse-group colors if available
+    if coarse_bins is not None and not coarse_bins.empty:
+        legend_handles = []
+        legend_labels = []
+        for g in unique_groups:
+            legend_handles.append(plt.Rectangle((0, 0), 1, 1, facecolor=palette[g], edgecolor='k'))
+        if -1 in set(group_labels):
+            legend_handles.append(plt.Rectangle((0, 0), 1, 1, color=palette[-1], edgecolor='k'))
+            legend_labels.append('unassigned')
+        ax1.legend(legend_handles, legend_labels, loc='upper right', fontsize=8)
+    fig.tight_layout()
     return fig
 
 
@@ -1387,25 +1498,16 @@ def woebin_adj_print_basic_info(i, xs, bins, dt, bins_breakslist, init_bins, sho
     print("--------", str(i)+"/"+str(xs_len), x_i, "--------")
     # print(">>> dt["+x_i+"].dtypes: ")
     # print(str(dt[x_i].dtypes), '\n')
-    #
-    '''
-    print(">>> dt["+x_i+"].describe(): ")
-    print(dt[x_i].describe(), '\n')
-    
-    if len(dt[x_i].unique()) < 10 or not is_numeric_dtype(dt[x_i]):
-        print(">>> dt["+x_i+"].value_counts(): ")
-        print(dt[x_i].value_counts(), '\n')
-    else:
-        dt[x_i].hist()
-        plt.title(x_i)
-        plt.show()
-    '''
-    if show_init_bins: display(init_bins[x_i])
+    # optionally also show the init_bins table and chart
+    if show_init_bins: 
+        display(init_bins[x_i])
+        fig_fine = plot_fine_bin(init_bins[x_i], title=x_i, coarse_bins=binx)
+        plt.show(fig_fine)
 
     ## current breaks
     print(">>> Current breaks:")
     print(bins_breakslist[x_i], '\n')
-    ## woebin plotting
+    ## coarse classing plot
     plt.show(woebin_plot(binx)[x_i])
     
     
