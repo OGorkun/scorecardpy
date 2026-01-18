@@ -988,7 +988,13 @@ def performance_testing(
         if bins is None:
             # Fallbacks: if sub_testing constant, create one interval by setting score_range to the value
             reason = bin_warnings[0] if bin_warnings else 'unknown'
-            warnings.warn(f"Could not build bins for group {group_value!s}: {reason}. "
+            date_range_str = ""
+            if not sub_testing.empty and date_col in sub_testing.columns:
+                date_vals = sub_testing[date_col].dropna().unique()
+                if len(date_vals) > 0:
+                    date_range_str = f" (dates: {sorted(date_vals)[0]} to {sorted(date_vals)[-1]})"
+            group_str = f"group {group_value!s}" if group_value is not None else "ungrouped data"
+            warnings.warn(f"Could not build bins for {group_str}{date_range_str}: {reason}. "
                           "Falling back to a single-value score_range.")
             train_score_local = train_score.copy()
             # represent constant range as the literal value for score_range
@@ -1006,7 +1012,13 @@ def performance_testing(
                 train_score_local["score_range"] = pd.cut(train_score_local[score_col], bins=bins, include_lowest=True)
                 sub_testing["score_range"] = pd.cut(sub_testing[score_col], bins=bins, include_lowest=True)
                 if bin_warnings:
-                    warnings.warn(f"Bin construction warnings for group {group_value!s}: {bin_warnings}")
+                    date_range_str = ""
+                    if not sub_testing.empty and date_col in sub_testing.columns:
+                        date_vals = sub_testing[date_col].dropna().unique()
+                        if len(date_vals) > 0:
+                            date_range_str = f" (dates: {sorted(date_vals)[0]} to {sorted(date_vals)[-1]})"
+                    group_str = f"group {group_value!s}" if group_value is not None else "ungrouped data"
+                    warnings.warn(f"Bin construction warnings for {group_str}{date_range_str}: {bin_warnings}")
             except ValueError as e:
                 # Last-resort attempt: deduplicate and sort bins then retry
                 bins = sorted(set(bins))
@@ -1014,7 +1026,13 @@ def performance_testing(
                     train_score_local["score_range"] = pd.cut(train_score_local[score_col], bins=bins, include_lowest=True)
                     sub_testing["score_range"] = pd.cut(sub_testing[score_col], bins=bins, include_lowest=True)
                 except Exception as e2:
-                    warnings.warn(f"pd.cut failed for group {group_value!s}: {e2}. Falling back to raw values in score_range.")
+                    date_range_str = ""
+                    if not sub_testing.empty and date_col in sub_testing.columns:
+                        date_vals = sub_testing[date_col].dropna().unique()
+                        if len(date_vals) > 0:
+                            date_range_str = f" (dates: {sorted(date_vals)[0]} to {sorted(date_vals)[-1]})"
+                    group_str = f"group {group_value!s}" if group_value is not None else "ungrouped data"
+                    warnings.warn(f"pd.cut failed for {group_str}{date_range_str}: {e2}. Falling back to raw values in score_range.")
                     train_score_local['score_range'] = train_score_local[score_col]
                     sub_testing['score_range'] = sub_testing[score_col]
 
