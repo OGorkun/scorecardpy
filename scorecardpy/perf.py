@@ -1108,13 +1108,38 @@ def performance_testing(
             .assign(DR=lambda d: d["Bads"] / d["Total"])
             .reset_index()
         )
-        DR_rating_ot = (
+        
+        # DR_rating_ot: Total from all periods (sub_testing), Bads/DR from outcome periods (sub_outcome) only
+        # Total for all periods
+        DR_rating_ot_total = (
             sub_testing.groupby([date_col, "rating"], observed=True)[target]
-            .agg(["count", "sum"])
-            .reset_index()
-            .rename(columns={"count": "Total", "sum": "Bads"})
+            .count()
+            .reset_index(name='Total')
         )
-        DR_rating_ot["DR"] = DR_rating_ot["Bads"] / DR_rating_ot["Total"]
+        
+        # Bads and DR for outcome periods only
+        if not sub_outcome.empty:
+            DR_rating_ot_bads = (
+                sub_outcome.groupby([date_col, "rating"], observed=True)[target]
+                .agg(['sum', 'count'])
+                .reset_index()
+                .rename(columns={'sum': 'Bads', 'count': 'Total_outcome'})
+            )
+            DR_rating_ot_bads["DR"] = DR_rating_ot_bads["Bads"] / DR_rating_ot_bads["Total_outcome"]
+            DR_rating_ot_bads = DR_rating_ot_bads.drop(columns=['Total_outcome'])
+            
+            # Merge: keep all dates/ratings from sub_testing, add outcome-only columns (NaN for non-outcome)
+            DR_rating_ot = pd.merge(
+                DR_rating_ot_total,
+                DR_rating_ot_bads[[date_col, 'rating', 'Bads', 'DR']],
+                on=[date_col, 'rating'],
+                how='left'
+            )
+        else:
+            # Empty outcome window -> add NaN columns for outcome-specific metrics
+            DR_rating_ot = DR_rating_ot_total.copy()
+            DR_rating_ot['Bads'] = np.nan
+            DR_rating_ot['DR'] = np.nan
 
         if group_value is not None:
             DR_rating[groupby_col] = group_value
