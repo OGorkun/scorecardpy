@@ -1047,6 +1047,19 @@ def performance_testing(
         psi_ot = psi_over_time(train_score_local, sub_testing, ["score_range"], date_col)
         psi_vars_ot = psi_over_time(train_woe, sub_testing, vars_woe, date_col)
 
+        # Extract bins by date from score_range binning
+        bins_by_date = (
+            sub_testing.groupby([date_col, "score_range"], observed=True)
+            .size()
+            .reset_index(name='count')
+            .drop(columns=['count'])
+            .sort_values([date_col, 'score_range'])
+            .reset_index(drop=True)
+        )
+        bins_by_date['score_range'] = bins_by_date['score_range'].astype(str)
+        if group_value is not None:
+            bins_by_date[groupby_col] = group_value
+
         distr_total = get_value_counts_by_date(sub_testing, vars_woe, date_col)
         outcome_bads_list = []
         for v in vars_woe:
@@ -1152,6 +1165,7 @@ def performance_testing(
             "train_distr": train_distr,
             "test_distr": test_distr,
             "psi_ot": psi_ot,
+            "bins_by_date": bins_by_date,
             "psi_vars_ot": psi_vars_ot,
             "distr_vars_ot": distr_vars_ot,
             "hhi_ot": hhi_ot,
