@@ -855,29 +855,59 @@ def performance_testing(
         sub_outcome = sub_outcome.copy()
         sub_testing = sub_testing.copy()
         # 1. PDs and Gini over time
+        # Calculate Total and Avg_PD for ALL periods (from sub_testing)
+        sub_testing_copy = sub_testing.copy()
+        sub_testing_copy["pd"] = pd_from_score(sub_testing_copy[score_col])
+        gini_ot_full = (
+            sub_testing_copy
+            .groupby(date_col, observed=True)
+            .agg(
+                Total=(target, "count"),
+                Avg_PD=("pd", "mean")
+            )
+            .reset_index()
+        )
+
+        # Calculate Bads, Bad Rate, Gini for OUTCOME periods only (from sub_outcome)
         if not sub_outcome.empty:
-            sub_outcome["pd"] = pd_from_score(sub_outcome[score_col])
-            gini_ot = (
-                sub_outcome
-                .groupby(date_col)
+            sub_outcome_copy = sub_outcome.copy()
+            sub_outcome_copy["pd"] = pd_from_score(sub_outcome_copy[score_col])
+            
+            gini_ot_outcome = (
+                sub_outcome_copy
+                .groupby(date_col, observed=True)
                 .agg(
-                    Total=(target, "count"),
                     Bads=(target, "sum"),
-                    Avg_PD=("pd", "mean")
+                    Total_outcome=(target, "count")
                 )
                 .reset_index()
             )
-            gini_ot["Bad Rate"] = gini_ot["Bads"] / gini_ot["Total"]
-            gini_df = gini_over_time(sub_outcome, target, [score_col], date_col)
+            gini_ot_outcome["Bad Rate"] = gini_ot_outcome["Bads"] / gini_ot_outcome["Total_outcome"]
+            
+            # Get Gini from gini_over_time
+            gini_df = gini_over_time(sub_outcome_copy, target, [score_col], date_col)
             # gini_df has columns [date_col, 'Variable', 'Gini']
             try:
                 gini_map = gini_df.loc[gini_df['Variable'] == score_col].set_index(date_col)['Gini']
-                gini_ot['Gini'] = gini_ot[date_col].map(gini_map)
+                gini_ot_outcome['Gini'] = gini_ot_outcome[date_col].map(gini_map)
             except Exception:
-                gini_ot['Gini'] = np.nan
+                gini_ot_outcome['Gini'] = np.nan
+            
+            # Drop Total_outcome (intermediate column used for calculation)
+            gini_ot_outcome = gini_ot_outcome.drop(columns=['Total_outcome'])
+            
+            # Merge: keep all dates from sub_testing, add outcome-only columns (NaN for non-outcome dates)
+            gini_ot = pd.merge(gini_ot_full, gini_ot_outcome[[date_col, 'Bads', 'Bad Rate', 'Gini']], 
+                               on=date_col, how='left')
         else:
-            # empty outcome window -> return empty gini_ot with expected columns
-            gini_ot = pd.DataFrame(columns=[date_col, "Total", "Bads", "Avg_PD", "Bad Rate", "Gini"])
+            # empty outcome window -> add NaN columns for outcome-specific metrics
+            gini_ot = gini_ot_full.copy()
+            gini_ot['Bads'] = np.nan
+            gini_ot['Bad Rate'] = np.nan
+            gini_ot['Gini'] = np.nan
+
+        # Reorder columns to match expected output order
+        gini_ot = gini_ot[[date_col, 'Total', 'Bads', 'Avg_PD', 'Bad Rate', 'Gini']]
 
         if group_value is not None:
             gini_ot[groupby_col] = group_value
