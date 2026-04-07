@@ -642,7 +642,14 @@ def iv_group(smp, var_list, groupby, y):
 def gini_vars(sample, target, vars_list, result_name):
     gini_vars = []
     for var in vars_list:
-        gini_var = -(roc_auc_score(sample[target], sample[var]) * 2 - 1)
+        try:
+            gini_var = -(roc_auc_score(sample[target], sample[var]) * 2 - 1)
+        except ValueError as e:
+            if "Only one class present" in str(e):
+                warnings.warn(f"Only one class present in target for variable {var}. Setting Gini to NaN.")
+                gini_var = np.nan
+            else:
+                raise
         gini_vars.append(gini_var)
     gini_vars_df = pd.DataFrame({'Variable': vars_list, result_name: gini_vars})
     return gini_vars_df
